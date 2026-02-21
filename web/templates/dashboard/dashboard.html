@@ -1,0 +1,89 @@
+{% extends "dashboard/base.html" %}
+{% load dashboard_filters %}
+{% block title %}Portfolio - Monaimetrics{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Portfolio Overview</h1>
+    <p>Risk profile: {{ data.profile|title }}</p>
+</div>
+
+{% if not data.connected %}
+<div class="alert alert-warning">
+    Not connected to Alpaca. {% if data.error %}{{ data.error }}{% endif %}
+</div>
+{% else %}
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Portfolio Value</div>
+        <div class="stat-value">${{ data.account.portfolio_value|floatformat:2 }}</div>
+        <div class="stat-sub">Status: {{ data.account.status }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Cash</div>
+        <div class="stat-value">${{ data.account.cash|floatformat:2 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Buying Power</div>
+        <div class="stat-value">${{ data.account.buying_power|floatformat:2 }}</div>
+    </div>
+</div>
+
+{% if data.allocation %}
+<div class="card">
+    <div class="card-title">Target Allocation (Cycle Score 0)</div>
+    <div class="allocation-bar">
+        <div class="segment segment-moderate" style="width: {{ data.allocation.moderate|as_pct }}%">
+            Moderate {{ data.allocation.moderate|as_pct }}%
+        </div>
+        <div class="segment segment-high" style="width: {{ data.allocation.high|as_pct }}%">
+            High {{ data.allocation.high|as_pct }}%
+        </div>
+        <div class="segment segment-cash" style="width: {{ data.allocation.cash|as_pct }}%">
+            Cash {{ data.allocation.cash|as_pct }}%
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-title">Positions ({{ data.positions|length }})</div>
+    {% if data.positions %}
+    <table>
+        <thead>
+            <tr>
+                <th>Symbol</th>
+                <th>Qty</th>
+                <th>Avg Entry</th>
+                <th>Current</th>
+                <th>Market Value</th>
+                <th>P&L</th>
+                <th>P&L %</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in data.positions %}
+            <tr>
+                <td><a href="{% url 'lookup' %}?symbol={{ p.symbol }}">{{ p.symbol }}</a></td>
+                <td>{{ p.qty|floatformat:0 }}</td>
+                <td>${{ p.avg_entry_price|floatformat:2 }}</td>
+                <td>${{ p.current_price|floatformat:2 }}</td>
+                <td>${{ p.market_value|floatformat:2 }}</td>
+                <td class="{% if p.unrealized_pl >= 0 %}positive{% else %}negative{% endif %}">
+                    ${{ p.unrealized_pl|floatformat:2 }}
+                </td>
+                <td class="{% if p.unrealized_pl_pct >= 0 %}positive{% else %}negative{% endif %}">
+                    {{ p.unrealized_pl_pct|floatformat:2 }}%
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: var(--text-muted); padding: 1rem 0;">No open positions.</p>
+    {% endif %}
+</div>
+
+{% endif %}
+{% endblock %}

@@ -1,0 +1,41 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Monaimetrics{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+    <div class="layout">
+        <nav class="sidebar">
+            <div class="sidebar-brand">
+                <h2>MONAIMETRICS</h2>
+                <span>Trading Dashboard</span>
+            </div>
+            <div class="sidebar-nav">
+                <a href="{% url 'dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+                    Portfolio
+                </a>
+                <a href="{% url 'lookup' %}" class="{% if request.resolver_match.url_name == 'lookup' %}active{% endif %}">
+                    Symbol Lookup
+                </a>
+                <a href="{% url 'research' %}" class="{% if request.resolver_match.url_name == 'research' %}active{% endif %}">
+                    Research
+                </a>
+                <a href="{% url 'settings' %}" class="{% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
+                    Settings
+                </a>
+            </div>
+            <div class="sidebar-footer">
+                <a href="{% url 'logout' %}">Sign out</a>
+            </div>
+        </nav>
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

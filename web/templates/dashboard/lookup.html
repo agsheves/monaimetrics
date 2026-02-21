@@ -1,0 +1,117 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Symbol Lookup - Monaimetrics{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Symbol Lookup</h1>
+    <p>Look up a stock symbol for pricing, technicals, and trade guidance</p>
+</div>
+
+<div class="card">
+    <form method="get" class="inline-form">
+        <div class="form-group">
+            <label for="symbol">Stock Symbol</label>
+            <input type="text" id="symbol" name="symbol" value="{{ symbol }}"
+                   placeholder="e.g. AAPL, TSLA, MSFT" style="text-transform: uppercase;">
+        </div>
+        <button type="submit" class="btn btn-primary" style="margin-bottom: 0;">Look Up</button>
+    </form>
+</div>
+
+{% if data %}
+    {% if data.error %}
+    <div class="alert alert-error">{{ data.error }}</div>
+    {% else %}
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">{{ data.symbol }} — Current Price</div>
+            <div class="stat-value">${{ data.price|floatformat:2 }}</div>
+            <div class="stat-sub">As of {{ data.timestamp }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">150-Day MA</div>
+            <div class="stat-value">${{ data.ma_150|floatformat:2 }}</div>
+            <div class="stat-sub">Slope: {{ data.ma_slope|floatformat:4 }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">ATR (14)</div>
+            <div class="stat-value">${{ data.atr_14|floatformat:2 }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Stage</div>
+            <div class="stat-value">{{ data.stage }} — {{ data.stage_label }}</div>
+            <div class="stat-sub">Vol Ratio: {{ data.volume_ratio|floatformat:2 }}x</div>
+        </div>
+    </div>
+
+    {% if data.signal %}
+    <div class="card">
+        <div class="card-title">Trading Signal</div>
+        <div class="signal-card">
+            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem;">
+                <span class="badge badge-{{ data.signal.action|lower }}">{{ data.signal.action }}</span>
+                <span style="color: var(--text-secondary); font-size: 0.85rem;">
+                    Tier: {{ data.signal.tier|title }} |
+                    Confidence: {{ data.signal.confidence }} |
+                    Urgency: {{ data.signal.urgency|title }}
+                </span>
+            </div>
+
+            {% if data.signal.position_size_usd > 0 %}
+            <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                Position Size: ${{ data.signal.position_size_usd|floatformat:2 }}
+                {% if data.signal.stop_price > 0 %} | Stop: ${{ data.signal.stop_price|floatformat:2 }}{% endif %}
+                {% if data.signal.target_price > 0 %} | Target: ${{ data.signal.target_price|floatformat:2 }}{% endif %}
+            </div>
+            {% endif %}
+
+            {% if data.signal.reasons %}
+            <ul class="signal-reasons">
+                {% for reason in data.signal.reasons %}
+                <li>{{ reason }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if data.recent_bars %}
+    <div class="card">
+        <div class="card-title">Recent Activity (Last 10 Days)</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Open</th>
+                    <th>High</th>
+                    <th>Low</th>
+                    <th>Close</th>
+                    <th>Volume</th>
+                    <th>Change</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for bar in data.recent_bars reversed %}
+                <tr>
+                    <td>{{ bar.date }}</td>
+                    <td>${{ bar.open|floatformat:2 }}</td>
+                    <td>${{ bar.high|floatformat:2 }}</td>
+                    <td>${{ bar.low|floatformat:2 }}</td>
+                    <td>${{ bar.close|floatformat:2 }}</td>
+                    <td>{{ bar.volume }}</td>
+                    <td class="{% if bar.close >= bar.open %}positive{% else %}negative{% endif %}">
+                        {% widthratio bar.close bar.open 100 as change_pct %}
+                        {% if bar.close >= bar.open %}+{% endif %}{{ bar.close|floatformat:2 }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    {% endif %}
+{% endif %}
+{% endblock %}

@@ -15,15 +15,25 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Monaimetrics CLI"
+args = "Monaimetrics Web"
 
 [[workflows.workflow]]
-name = "Monaimetrics CLI"
+name = "Monaimetrics Web"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python -m monaimetrics.cli"
+args = "python manage.py runserver 0.0.0.0:5000"
+waitForPort = 5000
 
 [workflows.workflow.metadata]
-outputType = "console"
+outputType = "webview"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[userenv]
+
+[userenv.shared]
+APP_USERNAME = "admin"

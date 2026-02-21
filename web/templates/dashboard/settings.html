@@ -1,0 +1,62 @@
+{% extends "dashboard/base.html" %}
+{% load dashboard_filters %}
+{% block title %}Settings - Monaimetrics{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Settings</h1>
+    <p>Adjust risk profile and view allocation tables</p>
+</div>
+
+<div class="card">
+    <div class="card-title">Risk Profile</div>
+    <form method="post">
+        {% csrf_token %}
+        <div class="radio-group">
+            {% for p in profiles %}
+            <div class="radio-option">
+                <input type="radio" name="risk_profile" id="profile_{{ p }}"
+                       value="{{ p }}" {% if p == profile %}checked{% endif %}
+                       onchange="this.form.submit()">
+                <label for="profile_{{ p }}">{{ p|title }}</label>
+            </div>
+            {% endfor %}
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <div class="card-title">Allocation Table — {{ profile|title }}</div>
+    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem;">
+        Shows target allocation by cycle score. Cycle score ranges from -2 (bearish) to +2 (bullish).
+    </p>
+    <table>
+        <thead>
+            <tr>
+                <th>Cycle Score</th>
+                <th>Moderate</th>
+                <th>High Risk</th>
+                <th>Cash</th>
+                <th>Allocation</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for score, alloc in allocation_table.items %}
+            <tr>
+                <td>{{ score }}</td>
+                <td>{{ alloc.moderate|as_pct }}%</td>
+                <td>{{ alloc.high|as_pct }}%</td>
+                <td>{{ alloc.cash|as_pct }}%</td>
+                <td>
+                    <div class="allocation-bar" style="height: 20px;">
+                        <div class="segment segment-moderate" style="width: {{ alloc.moderate|as_pct }}%"></div>
+                        <div class="segment segment-high" style="width: {{ alloc.high|as_pct }}%"></div>
+                        <div class="segment segment-cash" style="width: {{ alloc.cash|as_pct }}%"></div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
