@@ -96,6 +96,7 @@ def get_symbol_data(symbol: str, risk_profile: str = "moderate") -> dict:
                 "low": b.low,
                 "close": b.close,
                 "volume": int(b.volume),
+                "change_pct": ((b.close - b.open) / b.open * 100) if b.open > 0 else 0,
             }
             for b in bars[-10:]
         ]

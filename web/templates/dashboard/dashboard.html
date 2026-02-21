@@ -74,7 +74,7 @@
                     ${{ p.unrealized_pl|floatformat:2 }}
                 </td>
                 <td class="{% if p.unrealized_pl_pct >= 0 %}positive{% else %}negative{% endif %}">
-                    {{ p.unrealized_pl_pct|floatformat:2 }}%
+                    {{ p.unrealized_pl_pct|as_pct1 }}%
                 </td>
             </tr>
             {% endfor %}

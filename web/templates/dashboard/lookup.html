@@ -101,9 +101,8 @@
                     <td>${{ bar.low|floatformat:2 }}</td>
                     <td>${{ bar.close|floatformat:2 }}</td>
                     <td>{{ bar.volume }}</td>
-                    <td class="{% if bar.close >= bar.open %}positive{% else %}negative{% endif %}">
-                        {% widthratio bar.close bar.open 100 as change_pct %}
-                        {% if bar.close >= bar.open %}+{% endif %}{{ bar.close|floatformat:2 }}
+                    <td class="{% if bar.change_pct >= 0 %}positive{% else %}negative{% endif %}">
+                        {% if bar.change_pct >= 0 %}+{% endif %}{{ bar.change_pct|floatformat:2 }}%
                     </td>
                 </tr>
                 {% endfor %}
