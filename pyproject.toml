@@ -11,4 +11,6 @@ dependencies = [
     "gunicorn>=25.1.0",
     "python-dotenv>=1.2.1",
     "pytz>=2025.2",
+    "pyyaml>=6.0",
+    "requests>=2.31.0",
 ]

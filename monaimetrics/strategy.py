@@ -13,6 +13,9 @@ from monaimetrics.config import (
 )
 from monaimetrics.data_input import TechnicalData, AccountInfo, PositionInfo
 from monaimetrics import calculators
+from monaimetrics.alpha_signals import (
+    SignalDefinition, SignalCache, compute_alpha_adjustment,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +302,10 @@ def review_position(
     tech: TechnicalData,
     tier_value: float,
     config: SystemConfig,
+    *,
+    symbol_types: set[str] | None = None,
+    alpha_definitions: list[SignalDefinition] | None = None,
+    alpha_cache: SignalCache | None = None,
 ) -> Signal:
     """
     Run all sell-side checks on a position. Returns the most urgent signal.
@@ -324,6 +331,26 @@ def review_position(
     sell_signals = [s for s in checks if s is not None]
 
     if not sell_signals:
+        # Check alpha signals for strong negative adjustment
+        if alpha_definitions and alpha_cache and symbol_types:
+            alpha_adj = compute_alpha_adjustment(
+                alpha_definitions, alpha_cache,
+                symbol_types=symbol_types, side="sell",
+                global_max=config.alpha_signals.global_max_adjustment,
+            )
+            if alpha_adj <= -10.0:
+                return Signal(
+                    symbol=pos.symbol,
+                    action=SignalType.SELL,
+                    urgency=SignalUrgency.STANDARD,
+                    tier=pos.tier,
+                    confidence=70,
+                    reasons=[
+                        f"Alpha signals strongly negative: {alpha_adj:+.1f} pts "
+                        f"— external data suggests adverse conditions for this position",
+                    ],
+                )
+
         return Signal(
             symbol=pos.symbol,
             action=SignalType.HOLD,
@@ -404,6 +431,10 @@ def evaluate_opportunity(
     tier: Tier,
     available_capital: float,
     config: SystemConfig,
+    *,
+    symbol_types: set[str] | None = None,
+    alpha_definitions: list[SignalDefinition] | None = None,
+    alpha_cache: SignalCache | None = None,
 ) -> Signal:
     """
     Evaluate a stock for a potential buy. Runs through framework gates and scoring.
@@ -438,6 +469,17 @@ def evaluate_opportunity(
     confidence = compute_composite_confidence(
         tech_score, canslim, greenblatt, tier, config,
     )
+
+    # Alpha signals adjustment
+    if alpha_definitions and alpha_cache and symbol_types:
+        alpha_adj = compute_alpha_adjustment(
+            alpha_definitions, alpha_cache,
+            symbol_types=symbol_types, side="buy",
+            global_max=config.alpha_signals.global_max_adjustment,
+        )
+        if alpha_adj != 0.0:
+            confidence = max(0, min(100, confidence + int(round(alpha_adj))))
+            reasons.append(f"Alpha signals: {alpha_adj:+.1f} pts")
 
     # Gate 2: Minimum conviction
     if confidence < config.kelly.min_conviction:
@@ -585,6 +627,10 @@ def generate_plan(
     tier_values: dict[Tier, float],
     config: SystemConfig,
     cycle_score: int = 0,
+    *,
+    alpha_definitions: list[SignalDefinition] | None = None,
+    alpha_cache: SignalCache | None = None,
+    trade_type_resolver=None,
 ) -> TradingPlan:
     """
     Top-level plan generation. Reviews positions, scans opportunities,
@@ -592,6 +638,11 @@ def generate_plan(
     """
     signals: list[Signal] = []
     held_symbols = {p.symbol for p in managed_positions}
+
+    def _resolve_types(symbol: str) -> set[str] | None:
+        if trade_type_resolver is not None:
+            return trade_type_resolver.resolve(symbol)
+        return None
 
     # 1. Review all existing positions
     for pos in managed_positions:
@@ -608,7 +659,12 @@ def generate_plan(
             continue
 
         tv = tier_values.get(pos.tier, account.portfolio_value * 0.5)
-        signal = review_position(pos, tech, tv, config)
+        signal = review_position(
+            pos, tech, tv, config,
+            symbol_types=_resolve_types(pos.symbol),
+            alpha_definitions=alpha_definitions,
+            alpha_cache=alpha_cache,
+        )
         signals.append(signal)
 
     # 2. Scan opportunities (symbols not already held)
@@ -626,7 +682,12 @@ def generate_plan(
             if remaining <= 0:
                 continue
 
-            signal = evaluate_opportunity(symbol, tech, tier, remaining, config)
+            signal = evaluate_opportunity(
+                symbol, tech, tier, remaining, config,
+                symbol_types=_resolve_types(symbol),
+                alpha_definitions=alpha_definitions,
+                alpha_cache=alpha_cache,
+            )
 
             if signal.action == SignalType.BUY:
                 signals.append(signal)

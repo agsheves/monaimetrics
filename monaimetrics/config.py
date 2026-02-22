@@ -351,6 +351,19 @@ def _load_api_config() -> APIConfig:
 
 
 # ---------------------------------------------------------------------------
+# Alpha Signals
+# ---------------------------------------------------------------------------
+
+@dataclass
+class AlphaSignalsConfig:
+    enabled: bool = False
+    config_path: str = "alpha_signals.yaml"
+    global_max_adjustment: float = 15.0
+    refresh_on_cycle: bool = True
+    log_signals: bool = True
+
+
+# ---------------------------------------------------------------------------
 # Main Config
 # ---------------------------------------------------------------------------
 
@@ -371,6 +384,7 @@ class SystemConfig:
     rebalance: RebalanceConfig
     hold_audit: HoldAuditConfig
     api: APIConfig
+    alpha_signals: AlphaSignalsConfig = field(default_factory=AlphaSignalsConfig)
     dry_run: bool = True
 
     def get_allocation(self, cycle_score: int) -> TierAllocation:
@@ -440,5 +454,6 @@ def load_config(
         rebalance=RebalanceConfig(),
         hold_audit=HoldAuditConfig(),
         api=_load_api_config(),
+        alpha_signals=AlphaSignalsConfig(),
         dry_run=True,
     )

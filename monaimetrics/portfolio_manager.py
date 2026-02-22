@@ -28,6 +28,10 @@ from monaimetrics.trading_interface import (
     cancel_all_orders,
 )
 from monaimetrics import calculators
+from monaimetrics.alpha_signals import (
+    SignalCache, TradeTypeResolver,
+    load_signal_definitions, refresh_signals,
+)
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +76,38 @@ class PortfolioManager:
         self.paused: bool = False
         self.pause_reason: str = ""
         self.pause_until: datetime | None = None
+
+        # Alpha signals
+        self.alpha_definitions = []
+        self.alpha_cache = SignalCache()
+        self.trade_type_resolver = TradeTypeResolver()
+        if config.alpha_signals.enabled:
+            try:
+                defs, type_overrides = load_signal_definitions(
+                    config.alpha_signals.config_path,
+                )
+                self.alpha_definitions = defs
+                self.trade_type_resolver = TradeTypeResolver(
+                    overrides=type_overrides,
+                    alpaca_trading_client=self.clients.trading if self.clients else None,
+                )
+                log.info(
+                    "Alpha signals loaded: %d signal(s), %d trade type override(s)",
+                    len(defs), len(type_overrides),
+                )
+            except Exception as e:
+                log.warning("Failed to load alpha signals: %s", e)
+
+    # ----- Alpha Signals -----
+
+    def refresh_alpha_signals(self, context: dict | None = None):
+        """Refresh all alpha signal values (fetch + normalize + cache)."""
+        if not self.alpha_definitions:
+            return
+        ctx = context or {}
+        if self.config.api.decis_base_url:
+            ctx.setdefault("base_url", self.config.api.decis_base_url)
+        refresh_signals(self.alpha_definitions, self.alpha_cache, ctx)
 
     # ----- Tier Accounting -----
 
@@ -394,10 +430,24 @@ class PortfolioManager:
             except Exception as e:
                 log.warning("Tech data failed for %s: %s", sym, e)
 
-        # 5. Ask strategy
+        # 5. Refresh alpha signals
+        if self.config.alpha_signals.enabled and self.config.alpha_signals.refresh_on_cycle:
+            self.refresh_alpha_signals()
+            self.trade_type_resolver.preload(all_symbols)
+
+        # 6. Ask strategy
+        alpha_kwargs = {}
+        if self.config.alpha_signals.enabled and self.alpha_definitions:
+            alpha_kwargs = dict(
+                alpha_definitions=self.alpha_definitions,
+                alpha_cache=self.alpha_cache,
+                trade_type_resolver=self.trade_type_resolver,
+            )
+
         plan = generate_plan(
             self.managed_positions, technicals,
             account, tv, self.config, self.cycle_score,
+            **alpha_kwargs,
         )
 
         log.info(
@@ -408,7 +458,7 @@ class PortfolioManager:
             sum(1 for s in plan.signals if s.action == SignalType.HOLD),
         )
 
-        # 6. Execute
+        # 7. Execute
         records = self.execute_plan(plan)
 
         return plan, records

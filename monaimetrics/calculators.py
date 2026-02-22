@@ -299,3 +299,61 @@ def is_non_performing(
 ) -> bool:
     """True if position has been held past review window without hitting gain threshold."""
     return weeks_held >= review_weeks and current_gain < gain_threshold
+
+
+# ---------------------------------------------------------------------------
+# Alpha Signal Normalization
+# ---------------------------------------------------------------------------
+
+def normalize_range(
+    value: float,
+    min_value: float,
+    max_value: float,
+    invert: bool = False,
+) -> float:
+    """Linear map to [-1.0, +1.0]. Clamps inputs outside [min, max]."""
+    if max_value == min_value:
+        return 0.0
+    clamped = max(min_value, min(max_value, value))
+    normalized = ((clamped - min_value) / (max_value - min_value)) * 2.0 - 1.0
+    return -normalized if invert else normalized
+
+
+def normalize_zscore(
+    value: float,
+    mean: float,
+    std: float,
+    invert: bool = False,
+) -> float:
+    """Z-score clamped to [-1.0, +1.0]. Returns 0 if std is zero."""
+    if std <= 0:
+        return 0.0
+    z = (value - mean) / std
+    clamped = max(-1.0, min(1.0, z))
+    return -clamped if invert else clamped
+
+
+def normalize_threshold(
+    value: float,
+    threshold: float,
+    invert: bool = False,
+) -> float:
+    """Binary +1.0 / -1.0 based on whether value is above or below threshold."""
+    result = 1.0 if value >= threshold else -1.0
+    return -result if invert else result
+
+
+def aggregate_alpha_adjustment(
+    effects: list[tuple[float, float, float]],
+    global_max: float,
+) -> float:
+    """
+    Weighted sum of (signal_value, weight, max_adjustment) tuples,
+    capped per-effect and globally.
+    """
+    total = 0.0
+    for signal_value, weight, max_adj in effects:
+        raw = signal_value * weight * max_adj
+        capped = max(-max_adj, min(max_adj, raw))
+        total += capped
+    return max(-global_max, min(global_max, total))

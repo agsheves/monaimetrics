@@ -1,0 +1,67 @@
+# Alpha Signals Configuration
+# Each signal = one data source, fetched and normalized once
+# Each effect = one way that signal influences a specific trade type
+
+signals:
+  - id: "mideast_stability"
+    name: "Middle East Stability Index"
+    source:
+      type: "rest_api"
+      url_template: "{base_url}/stability/ME"
+      auth_env_var: "DECIS_API_KEY"
+      response_path: "data.stability_index"
+    normalization:
+      method: "range"
+      min_value: 0
+      max_value: 100
+      # Result: 0 -> -1.0 (unstable), 100 -> +1.0 (stable)
+    ttl_minutes: 60
+
+    effects:
+      - name: "Regional equity drag"
+        polarity: "bull"           # stable = bullish for equities (signal kept as-is)
+        trade_types: ["financials"]
+        weight: 1.0
+        max_adjustment: 8.0
+        apply_to: "both"
+
+      - name: "Oil price boost"
+        polarity: "bear"           # stable = bearish for oil (signal FLIPPED)
+        trade_types: ["energy", "oil"]
+        weight: 1.0
+        max_adjustment: 10.0
+        apply_to: "both"
+
+      - name: "Shipping cost increase"
+        polarity: "bear"           # stable = bearish for shipping (signal FLIPPED)
+        trade_types: ["shipping"]
+        weight: 0.6
+        max_adjustment: 5.0
+        apply_to: "buy"
+
+  - id: "vix_level"
+    name: "VIX Fear Gauge"
+    source:
+      type: "rest_api"
+      url_template: "https://api.example.com/vix/current"
+      auth_env_var: ""
+      response_path: "data.value"
+    normalization:
+      method: "range"
+      min_value: 10
+      max_value: 40
+      invert: true                 # high VIX -> -1.0 (fearful)
+    ttl_minutes: 30
+
+    effects:
+      - name: "Broad market fear"
+        polarity: "bull"           # signal already inverted above, keep as-is
+        trade_types: ["all"]       # special keyword: applies to everything
+        weight: 0.8
+        max_adjustment: 8.0
+        apply_to: "buy"
+
+# Optional trade type overrides (auto-detected from Alpaca otherwise)
+trade_types:
+  MAERSK: ["shipping", "logistics"]
+  LMT: ["defense", "industrials"]
