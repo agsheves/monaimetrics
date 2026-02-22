@@ -38,6 +38,7 @@ externalPort = 80
 
 [userenv.shared]
 APP_USERNAME = "admin"
+KALSHI_USE_DEMO = "false"
 
 [deployment]
 deploymentTarget = "autoscale"

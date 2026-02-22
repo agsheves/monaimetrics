@@ -122,6 +122,10 @@ def load_arb_config() -> ArbConfig:
         key_path = raw_key
         key_pem = ""
 
+    # Also check KALSHI_PRIVATE_KEY_PEM as a dedicated inline PEM env var.
+    if not key_pem:
+        key_pem = os.environ.get("KALSHI_PRIVATE_KEY_PEM", "")
+
     return ArbConfig(
         kalshi_api_key=os.environ.get("KALSHI_API_KEY", ""),
         kalshi_private_key_path=key_path,
