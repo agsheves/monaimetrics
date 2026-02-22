@@ -15,6 +15,7 @@
                 <a href="{% url 'dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">Portfolio</a>
                 <a href="{% url 'lookup' %}" class="{% if request.resolver_match.url_name == 'lookup' %}active{% endif %}">Lookup</a>
                 <a href="{% url 'research' %}" class="{% if request.resolver_match.url_name == 'research' %}active{% endif %}">Research</a>
+                <a href="{% url 'arb' %}" class="{% if request.resolver_match.url_name == 'arb' %}active{% endif %}">Arb</a>
                 <a href="{% url 'settings' %}" class="{% if request.resolver_match.url_name == 'settings' %}active{% endif %}">Settings</a>
             </nav>
             <a href="{% url 'logout' %}" class="topbar-logout">Sign out</a>

@@ -1,0 +1,162 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Arb Trading - Monaimetrics{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="arb-accent">Arb Trading</h1>
+    <p>Kalshi prediction market arbitrage — {{ data.config.mode }} mode{% if data.config.dry_run %} (Dry Run){% endif %}</p>
+</div>
+
+{% if not data.connected %}
+<div class="alert alert-warning">
+    Not connected to Kalshi. {% if data.error %}{{ data.error }}{% endif %}
+</div>
+
+<div class="card">
+    <div class="card-title">Configuration</div>
+    <table>
+        <tr><td>Mode</td><td>{{ data.config.mode }}</td></tr>
+        <tr><td>Dry Run</td><td>{{ data.config.dry_run }}</td></tr>
+        <tr><td>Min Profit</td><td>{{ data.config.min_profit_pct }}%</td></tr>
+        <tr><td>Max Contracts/Leg</td><td>{{ data.config.max_contracts_per_leg }}</td></tr>
+        <tr><td>Max Open Arbs</td><td>{{ data.config.max_open_arbs }}</td></tr>
+        <tr><td>Max Daily Trades</td><td>{{ data.config.max_daily_trades }}</td></tr>
+    </table>
+</div>
+
+{% else %}
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Kalshi Balance</div>
+        <div class="stat-value">${{ data.balance_usd|floatformat:2 }}</div>
+        <div class="stat-sub">{{ data.config.mode }} account</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Open Positions</div>
+        <div class="stat-value">{{ data.positions_count }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Arb Opportunities</div>
+        <div class="stat-value">{{ data.opportunities_count }}</div>
+        <div class="stat-sub">Found in latest scan</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Max Capital</div>
+        <div class="stat-value">${{ data.config.max_capital_deployed_usd|floatformat:0 }}</div>
+        <div class="stat-sub">Deployment limit</div>
+    </div>
+</div>
+
+{% if data.opportunities %}
+<div class="card">
+    <div class="card-title">Arb Opportunities (Top {{ data.opportunities|length }})</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Event</th>
+                <th>Side</th>
+                <th>Contracts</th>
+                <th>Cost</th>
+                <th>Fees</th>
+                <th>Net Profit</th>
+                <th>Return</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for opp in data.opportunities %}
+            <tr>
+                <td>
+                    {{ opp.event_ticker }}
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">
+                        {% for title in opp.markets %}{{ title }}{% if not forloop.last %} / {% endif %}{% endfor %}
+                    </div>
+                </td>
+                <td><span class="badge badge-{{ opp.side|lower }}">{{ opp.side }}</span></td>
+                <td>{{ opp.contracts }}</td>
+                <td>{{ opp.combined_cost_cents }}&#162;</td>
+                <td>{{ opp.total_fee_cents }}&#162;</td>
+                <td class="positive">+{{ opp.net_profit_cents }}&#162;</td>
+                <td class="positive">+{{ opp.net_profit_pct }}%</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-title">Arb Opportunities</div>
+    <p style="color: var(--text-muted); padding: 0.5rem 0;">No arbitrage opportunities found in the latest scan.</p>
+</div>
+{% endif %}
+
+{% if data.positions %}
+<div class="card">
+    <div class="card-title">Kalshi Positions</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Ticker</th>
+                <th>Side</th>
+                <th>Contracts</th>
+                <th>Avg Price</th>
+                <th>Market Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for pos in data.positions %}
+            <tr>
+                <td>{{ pos.ticker }}</td>
+                <td>{% if pos.market_exposure > 0 %}YES{% else %}NO{% endif %}</td>
+                <td>{{ pos.total_traded }}</td>
+                <td>—</td>
+                <td>—</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if data.projection %}
+<div class="card">
+    <div class="card-title">Compound Growth Projection (12 weeks, ~1.5% per trade, 3 trades/week)</div>
+    <table class="projection-table">
+        <thead>
+            <tr>
+                <th>Week</th>
+                <th>Projected Balance</th>
+                <th>Cumulative Return</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for snap in data.projection %}
+            {% if snap.week == 1 or snap.week == 4 or snap.week == 8 or snap.week == 12 %}
+            <tr>
+                <td>Week {{ snap.week }}</td>
+                <td>${{ snap.balance_usd|floatformat:2 }}</td>
+                <td class="positive">+{{ snap.cumulative_return_pct }}%</td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-title">Configuration</div>
+    <table>
+        <tr><td>Mode</td><td>{{ data.config.mode }}</td></tr>
+        <tr><td>Dry Run</td><td>{{ data.config.dry_run }}</td></tr>
+        <tr><td>Scan Categories</td><td>{{ data.config.scan_categories|join:", " }}</td></tr>
+        <tr><td>Min Profit</td><td>{{ data.config.min_profit_pct }}%</td></tr>
+        <tr><td>Max Contracts/Leg</td><td>{{ data.config.max_contracts_per_leg }}</td></tr>
+        <tr><td>Max Open Arbs</td><td>{{ data.config.max_open_arbs }}</td></tr>
+        <tr><td>Max Daily Trades</td><td>{{ data.config.max_daily_trades }}</td></tr>
+        <tr><td>Max Capital</td><td>${{ data.config.max_capital_deployed_usd|floatformat:0 }}</td></tr>
+    </table>
+</div>
+
+{% endif %}
+{% endblock %}

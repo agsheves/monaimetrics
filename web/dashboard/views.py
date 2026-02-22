@@ -8,6 +8,7 @@ from django.views.decorators.http import require_http_methods
 
 from web.services.portfolio import get_portfolio_data, get_symbol_data, get_allocation_for_profile
 from web.services.research import ask_research
+from web.services.arb import get_arb_dashboard_data
 
 
 def login_required(view_func):
@@ -105,6 +106,14 @@ def research_view(request: HttpRequest) -> HttpResponse:
         "question": question,
         "result": result,
     })
+    response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
+
+
+@login_required
+def arb_view(request: HttpRequest) -> HttpResponse:
+    data = get_arb_dashboard_data()
+    response = render(request, "dashboard/arb.html", {"data": data})
     response["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return response
 
