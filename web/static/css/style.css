@@ -429,8 +429,6 @@ textarea { resize: vertical; min-height: 80px; }
 
 .arb-accent { color: var(--purple); }
 
-.projection-table td:first-child { font-weight: 500; }
-
 .loading {
     display: inline-block;
     width: 1rem;

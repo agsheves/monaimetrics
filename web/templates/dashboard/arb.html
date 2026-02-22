@@ -118,32 +118,6 @@
 </div>
 {% endif %}
 
-{% if data.projection %}
-<div class="card">
-    <div class="card-title">Compound Growth Projection (12 weeks, ~1.5% per trade, 3 trades/week)</div>
-    <table class="projection-table">
-        <thead>
-            <tr>
-                <th>Week</th>
-                <th>Projected Balance</th>
-                <th>Cumulative Return</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for snap in data.projection %}
-            {% if snap.week == 1 or snap.week == 4 or snap.week == 8 or snap.week == 12 %}
-            <tr>
-                <td>Week {{ snap.week }}</td>
-                <td>${{ snap.balance_usd|floatformat:2 }}</td>
-                <td class="positive">+{{ snap.cumulative_return_pct }}%</td>
-            </tr>
-            {% endif %}
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-{% endif %}
-
 <div class="card">
     <div class="card-title">Configuration</div>
     <table>

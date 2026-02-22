@@ -9,7 +9,7 @@ log = logging.getLogger(__name__)
 def get_arb_dashboard_data() -> dict:
     from monaimetrics.trading_arb import (
         load_arb_config, KalshiClient, ArbLedger,
-        scan_and_evaluate, check_settlements, project_compound_growth,
+        scan_and_evaluate, check_settlements,
     )
 
     config = load_arb_config()
@@ -70,13 +70,6 @@ def get_arb_dashboard_data() -> dict:
             "total_fee_cents": opp.total_fee_cents,
         })
 
-    projection = project_compound_growth(
-        starting_balance_cents=balance_cents,
-        profit_pct_per_trade=0.015,
-        trades_per_week=3,
-        weeks=12,
-    )
-
     return {
         "connected": connected,
         "error": None,
@@ -86,7 +79,6 @@ def get_arb_dashboard_data() -> dict:
         "opportunities": opps_data,
         "opportunities_count": len(opportunities),
         "ledger": ledger.summary(),
-        "projection": projection,
         "config": _config_summary(config),
     }
 
