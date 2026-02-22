@@ -19,8 +19,7 @@
                        value="{{ p }}" {% if p == profile %}checked{% endif %}
                        onchange="this.form.submit()">
                 <label for="profile_{{ p }}">{{ p|title }}</label>
-            </div>
-            {% endfor %}
+            </div>{% endfor %}
         </div>
     </form>
 </div>

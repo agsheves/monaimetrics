@@ -16,6 +16,8 @@ pip install -e .
 
 ### 2. Configure environment variables
 
+**NB - For basic set up you will need accounts for [Aplaca](alpaca.markets) and [Kalshi](https://kalshi.com/) to generate keys and credentials.
+
 Create a `.env` file in the project root:
 
 ```bash
@@ -34,8 +36,8 @@ KALSHI_USE_DEMO=true
 ARB_DRY_RUN=true
 
 # Alpha signals API auth (optional — see Alpha Signals section below)
-DECIS_API_KEY=your_key
-DECIS_BASE_URL=https://api.example.com
+YOUR_FEED_API_KEY=your_key
+YOUR_FEED_BASE_URL=https://api.example.com
 ```
 
 You default to a paper-only Alpaca account, which the app works with for testing and configuration.
@@ -54,7 +56,11 @@ The dashboard offers: portfolio summary, activity report, growth report, and a t
 
 ## Alpha Signals
 
+### What is this?
+
 Alpha signals let external data feeds (APIs, indices, gauges) influence trade scoring. The system is configured entirely through `alpha_signals.yaml` — no code changes needed to add or remove data sources.
+
+This is where you can apply your specific insights to the trades to take advantage of any inputs you can correlate with trade pricing. For example, the Decis country stability API provides a feed of country stabikity that could be correlated with market movements. Importantly, the feed allows inverse correlation so the same event - e.g. increased instability in the Middle East - generates negative movements to reginally-exposed stocks but upward presssure on oil prices.
 
 ### How it works
 
@@ -66,8 +72,8 @@ This means one real-world event can have opposite impacts on different sectors:
 
 ```
 Country stability drops -> normalized to -1.0
-  -> "bull" effect on financials:  -1.0 kept   -> confidence drops (bad for banks)
-  -> "bear" effect on energy:      -1.0 flipped -> confidence rises (good for oil)
+  -> "bear" effect on financials:  -1.0 kept   -> confidence drops (bad for banks)
+  -> "bull" effect on energy:      -1.0 flipped -> confidence rises (good for oil)
 ```
 
 ### Enable alpha signals
