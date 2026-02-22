@@ -6,9 +6,9 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render, redirect
 from django.views.decorators.http import require_http_methods
 
-from web.services.portfolio import get_portfolio_data, get_symbol_data, get_allocation_for_profile
-from web.services.research import ask_research
-from web.services.arb import get_arb_dashboard_data
+from monaimetrics.web_portfolio import get_portfolio_data, get_symbol_data, get_allocation_for_profile
+from monaimetrics.web_research import ask_research
+from monaimetrics.web_arb import get_arb_dashboard_data
 
 
 def login_required(view_func):

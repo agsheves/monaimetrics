@@ -20,13 +20,13 @@ Monaimetrics is a Python trading dashboard that connects to Alpaca's trading API
   - `trading_interface.py` - Order execution via Alpaca
   - `reporting.py` - Trade/performance reporting
   - `audit_qa.py` - Retrospective analysis
-  - `trading_arb.py` - Kalshi arb trading engine (separate config, accounting, execution)
+  - `prediction_trading_arb.py` - Kalshi arb trading engine (separate config, accounting, execution)
 - `web/` - Django web application
   - `settings.py` - Django settings (ALLOWED_HOSTS=*, session cookies, CSRF)
   - `urls.py` - Root URL config
   - `wsgi.py` - WSGI application
   - `dashboard/` - Main app (views, URLs, template tags)
-  - `services/` - Service layer (portfolio data, research via Groq, arb trading)
+  - (no services folder — all functional code lives in `monaimetrics/`)
   - `templates/dashboard/` - HTML templates (base, login, dashboard, settings, lookup, research, arb)
   - `static/css/` - Dark theme CSS
 - `_developer/` - Reference documents (used by research panel)

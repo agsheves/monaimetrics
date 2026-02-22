@@ -14,7 +14,7 @@ def _load_reference_docs() -> str:
     if _docs_cache is not None:
         return _docs_cache
 
-    docs_dir = Path(__file__).resolve().parent.parent.parent / "_developer"
+    docs_dir = Path(__file__).resolve().parent.parent / "_developer"
     if not docs_dir.exists():
         return "No reference documents found."
 

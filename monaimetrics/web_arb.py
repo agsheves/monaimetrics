@@ -7,9 +7,12 @@ log = logging.getLogger(__name__)
 
 
 def get_arb_dashboard_data() -> dict:
-    from monaimetrics.trading_arb import (
-        load_arb_config, KalshiClient, ArbLedger,
-        scan_and_evaluate, check_settlements,
+    from monaimetrics.prediction_trading_arb import (
+        load_arb_config,
+        KalshiClient,
+        ArbLedger,
+        scan_and_evaluate,
+        check_settlements,
     )
 
     config = load_arb_config()
@@ -17,7 +20,8 @@ def get_arb_dashboard_data() -> dict:
     if not config.kalshi_api_key:
         return {
             "connected": False,
-            "error": "Kalshi API key not configured. Add KALSHI_API_KEY to your environment.",
+            "error":
+            "Kalshi API key not configured. Add KALSHI_API_KEY to your environment.",
             "config": _config_summary(config),
         }
 
@@ -28,7 +32,8 @@ def get_arb_dashboard_data() -> dict:
         else:
             return {
                 "connected": False,
-                "error": "Kalshi private key not configured. Add KALSHI_PRIVATE_KEY_PEM to your environment.",
+                "error":
+                "Kalshi private key not configured. Add KALSHI_PRIVATE_KEY_PEM to your environment.",
                 "config": _config_summary(config),
             }
 
