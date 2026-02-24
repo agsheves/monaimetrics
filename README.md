@@ -6,6 +6,8 @@ Please use this at your own risk and only deploy capital that you can afford to 
 
 An opinionated, automated trading platform that applies a series of tried and tested investment rules to build and manage a growth-focused portfolio. The system scores stocks through multiple frameworks (Stage Analysis, CANSLIM, Magic Formula, Event Cascade, Asymmetry), sizes positions via Kelly criterion, and manages risk with layered stop-losses, trailing stops, and circuit breakers.
 
+Copyright of the original source papers belongs to the original authors as cited in the reference documents in ```/reference_docs```.
+
 Includes prediction market arbitrage (Kalshi) and an AI-powered research mode for answering technical questions about holdings and strategy.
 
 ---
