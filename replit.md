@@ -66,8 +66,8 @@ Monaimetrics is a Python trading dashboard that connects to Alpaca's trading API
 ### Automatic Trading Scheduler
 - Boots via Django's `AppConfig.ready()` hook in `web/dashboard/apps.py`
 - Implemented in `monaimetrics/scheduler.py`
-- **Assessment job**: fetches full live universe of tradeable US equities from Alpaca (`SCAN_UNIVERSE_LIMIT`, default 150), evaluates every symbol against all strategy rules, executes any buy/sell/reduce signals — runs every `ASSESSMENT_INTERVAL_MINUTES` (default: 5) during market hours
-- **Stop check job**: lightweight price-only check on current positions every `STOP_CHECK_INTERVAL_MINUTES` (default: 1) during market hours — fires stop-loss sells immediately without waiting for the next assessment
+- **Assessment job**: runs twice daily (09:45 ET and 14:00 ET, Mon–Fri). Fetches the live Alpaca universe of tradeable US equities (`SCAN_UNIVERSE_LIMIT`, default 150), evaluates every symbol through the full strategy stack (stage analysis, Kelly sizing, cycle positioning, risk tier allocation), executes buy/sell/reduce signals that meet the rules.
+- **Stop check job**: lightweight price-only scan of current positions every `STOP_CHECK_INTERVAL_MINUTES` (default: 15) during market hours — fires stop-loss and trailing-stop sells immediately without waiting for the next assessment.
 - Market hours: 09:30–16:00 ET, Monday–Friday only
 - Both jobs log activity and respect `DRY_RUN` — no orders are submitted in dry run mode
 - Uses Django's `RUN_MAIN` env var guard to avoid double-starting under the StatReloader
