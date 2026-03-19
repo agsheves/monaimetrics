@@ -17,7 +17,7 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.staticfiles",
-    "web.dashboard",
+    "web.dashboard.apps.DashboardConfig",
 ]
 
 MIDDLEWARE = [
@@ -66,8 +66,22 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "[{asctime}] {levelname} {name}: {message}",
+            "style": "{",
+        },
+    },
     "handlers": {
-        "console": {"class": "logging.StreamHandler"},
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
     },
     "root": {"handlers": ["console"], "level": "WARNING"},
+    "loggers": {
+        "monaimetrics": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "web": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "apscheduler": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+    },
 }

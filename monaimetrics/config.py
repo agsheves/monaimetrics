@@ -458,6 +458,6 @@ def load_config(
         hold_audit=HoldAuditConfig(),
         api=_load_api_config(),
         alpha_signals=AlphaSignalsConfig(),
-        dry_run=os.environ.get("DRY_RUN", "false").lower() == "true",
+        dry_run=os.environ.get("DRY_RUN", "true").lower() == "true",
         max_position_usd=float(os.environ.get("MAX_POSITION_USD", "2.0")),
     )

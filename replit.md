@@ -63,9 +63,18 @@ Monaimetrics is a Python trading dashboard that connects to Alpaca's trading API
 6. **Arb Trading** (`/arb/`) - Kalshi prediction market arbitrage dashboard (separate from stock portfolio)
 7. **Settings** (`/settings/`) - Risk profile selector with allocation table preview
 
+### Automatic Trading Scheduler
+- Boots via Django's `AppConfig.ready()` hook in `web/dashboard/apps.py`
+- Implemented in `monaimetrics/scheduler.py`
+- **Assessment job**: runs `portfolio_manager.run_assessment()` every `ASSESSMENT_INTERVAL_MINUTES` (default: 5) during market hours
+- **Stop check job**: lightweight price-only check every `STOP_CHECK_INTERVAL_MINUTES` (default: 1) during market hours
+- Market hours: 09:30–16:00 ET, Monday–Friday only
+- Both jobs log activity and respect `DRY_RUN` — no orders are submitted in dry run mode
+- Uses Django's `RUN_MAIN` env var guard to avoid double-starting under the StatReloader
+
 ### Safety Controls
 - `MAX_POSITION_USD` env var (default: `2.0`) — hard dollar cap enforced in `trading_interface._check_position_size` before any order is submitted; all scan signals are also capped to this value
-- `DRY_RUN=true` env var — skips actual order submission; default is `false` (live execution)
+- `DRY_RUN` env var — skips actual order submission; **default is `true`** (safe mode). Set `DRY_RUN=false` to enable live execution.
 - `ALPACA_PAPER=true` env var — switches Alpaca client to paper trading mode (default: live)
 
 ## Running
