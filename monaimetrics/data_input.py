@@ -90,7 +90,7 @@ class AlpacaClients:
             self._trading = TradingClient(
                 self._api_config.alpaca_api_key,
                 self._api_config.alpaca_secret_key,
-                paper=True,
+                paper=self._api_config.alpaca_paper,
             )
         return self._trading
 
