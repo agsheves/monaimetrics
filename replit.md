@@ -58,9 +58,14 @@ Monaimetrics is a Python trading dashboard that connects to Alpaca's trading API
 1. **Login** (`/login/`) - Simple username/password auth
 2. **Portfolio** (`/`) - Portfolio value, cash, positions, allocation bar
 3. **Symbol Lookup** (`/lookup/`) - Stock lookup with price, technicals, trading signals
-4. **Research** (`/research/`) - Ask questions about trading strategies via Groq LLM
-5. **Arb Trading** (`/arb/`) - Kalshi prediction market arbitrage dashboard (separate from stock portfolio)
-6. **Settings** (`/settings/`) - Risk profile selector with allocation table preview
+4. **Scan** (`/scan/`) - Dry-run opportunity scan across a symbol universe; buy candidates ranked by confidence
+5. **Research** (`/research/`) - Ask questions about trading strategies via Groq LLM
+6. **Arb Trading** (`/arb/`) - Kalshi prediction market arbitrage dashboard (separate from stock portfolio)
+7. **Settings** (`/settings/`) - Risk profile selector with allocation table preview
+
+### Safety Controls
+- `MAX_POSITION_USD` env var (default: `2.0`) — hard dollar cap enforced in `trading_interface._check_position_size` before any order is submitted; all scan signals are also capped to this value
+- `ALPACA_PAPER=true` env var — switches Alpaca client to paper trading mode (default: live)
 
 ## Running
 - **Web UI**: `python manage.py runserver 0.0.0.0:5000`

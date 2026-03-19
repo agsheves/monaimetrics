@@ -1,0 +1,139 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Scan — Monaimetrics{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <h2>Opportunity Scan</h2>
+    <p class="page-subtitle">
+        Dry-run signal scan across {{ data.scanned|length }} symbol{{ data.scanned|length|pluralize }}.
+        Position limit: <strong>${{ data.limit_usd }}</strong> per trade.
+    </p>
+</div>
+
+<form method="get" class="scan-form card">
+    <div class="scan-form-row">
+        <div class="form-group" style="flex:1; margin-bottom:0;">
+            <label for="symbols">Custom Symbols (comma-separated)</label>
+            <input type="text" id="symbols" name="symbols"
+                   value="{{ symbols_input }}"
+                   placeholder="e.g. AAPL, MSFT, GOOGL  (leave blank for default universe)">
+        </div>
+        <button type="submit" class="btn btn-primary" style="align-self:flex-end;">Run Scan</button>
+    </div>
+</form>
+
+{% if data.error %}
+<div class="alert alert-error">{{ data.error }}</div>
+{% else %}
+
+{% if data.buy_signals %}
+<div class="card">
+    <div class="card-title">Buy Candidates ({{ data.buy_signals|length }})</div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Price</th>
+                    <th>Stage</th>
+                    <th>Confidence</th>
+                    <th>Tier</th>
+                    <th>Urgency</th>
+                    <th>Size ($)</th>
+                    <th>Stop</th>
+                    <th>Target</th>
+                    <th>Vol Ratio</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for s in data.buy_signals %}
+                <tr class="scan-buy-row">
+                    <td><strong>{{ s.symbol }}</strong></td>
+                    <td>${{ s.price }}</td>
+                    <td>{{ s.stage_label }}</td>
+                    <td>
+                        <div class="confidence-bar-wrap">
+                            <div class="confidence-bar" style="width:{{ s.confidence }}%"></div>
+                            <span>{{ s.confidence }}</span>
+                        </div>
+                    </td>
+                    <td><span class="badge badge-{{ s.tier }}">{{ s.tier }}</span></td>
+                    <td><span class="badge badge-urgency-{{ s.urgency }}">{{ s.urgency }}</span></td>
+                    <td>${{ s.position_size_usd }}</td>
+                    <td>{% if s.stop_price %}<span class="text-danger">${{ s.stop_price }}</span>{% else %}—{% endif %}</td>
+                    <td>{% if s.target_price %}<span class="text-success">${{ s.target_price }}</span>{% else %}—{% endif %}</td>
+                    <td>{% if s.volume_ratio %}{{ s.volume_ratio }}x{% else %}—{% endif %}</td>
+                </tr>
+                <tr class="scan-reasons-row">
+                    <td colspan="10">
+                        <ul class="reasons-list">
+                            {% for r in s.reasons %}<li>{{ r }}</li>{% endfor %}
+                        </ul>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-title">Buy Candidates</div>
+    <p class="text-muted">No buy signals found across the scanned universe under current market conditions.</p>
+</div>
+{% endif %}
+
+{% if data.other_signals %}
+<div class="card">
+    <div class="card-title">Watch / Hold Signals ({{ data.other_signals|length }})</div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Price</th>
+                    <th>Stage</th>
+                    <th>Action</th>
+                    <th>Confidence</th>
+                    <th>Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for s in data.other_signals %}
+                <tr>
+                    <td><strong>{{ s.symbol }}</strong></td>
+                    <td>${{ s.price }}</td>
+                    <td>{{ s.stage_label }}</td>
+                    <td><span class="badge badge-action-{{ s.action|lower }}">{{ s.action }}</span></td>
+                    <td>{{ s.confidence }}</td>
+                    <td class="text-muted small">{{ s.reasons|first }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if data.scan_errors %}
+<div class="card">
+    <div class="card-title">Scan Errors ({{ data.scan_errors|length }})</div>
+    <ul class="reasons-list">
+        {% for e in data.scan_errors %}
+        <li><strong>{{ e.symbol }}</strong>: {{ e.error }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-title">Scanned Universe</div>
+    <div class="symbol-chips">
+        {% for sym in data.scanned %}
+        <span class="chip">{{ sym }}</span>
+        {% endfor %}
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}

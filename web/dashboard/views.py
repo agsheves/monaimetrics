@@ -6,7 +6,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render, redirect
 from django.views.decorators.http import require_http_methods
 
-from monaimetrics.web_portfolio import get_portfolio_data, get_symbol_data, get_allocation_for_profile
+from monaimetrics.web_portfolio import get_portfolio_data, get_symbol_data, get_allocation_for_profile, scan_for_opportunities
 from monaimetrics.web_research import ask_research
 from monaimetrics.web_arb import get_arb_dashboard_data
 
@@ -114,6 +114,20 @@ def research_view(request: HttpRequest) -> HttpResponse:
 def arb_view(request: HttpRequest) -> HttpResponse:
     data = get_arb_dashboard_data()
     response = render(request, "dashboard/arb.html", {"data": data})
+    response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
+
+
+@login_required
+def scan_view(request: HttpRequest) -> HttpResponse:
+    profile = request.session.get("risk_profile", "moderate")
+    symbols_raw = request.GET.get("symbols", "").strip().upper()
+    symbols = [s.strip() for s in symbols_raw.split(",") if s.strip()] if symbols_raw else None
+    data = scan_for_opportunities(profile, symbols)
+    response = render(request, "dashboard/scan.html", {
+        "data": data,
+        "symbols_input": symbols_raw,
+    })
     response["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return response
 

@@ -388,6 +388,7 @@ class SystemConfig:
     api: APIConfig
     alpha_signals: AlphaSignalsConfig = field(default_factory=AlphaSignalsConfig)
     dry_run: bool = True
+    max_position_usd: float = 2.0
 
     def get_allocation(self, cycle_score: int) -> TierAllocation:
         clamped = max(-2, min(2, cycle_score))
@@ -458,4 +459,5 @@ def load_config(
         api=_load_api_config(),
         alpha_signals=AlphaSignalsConfig(),
         dry_run=True,
+        max_position_usd=float(os.environ.get("MAX_POSITION_USD", "2.0")),
     )

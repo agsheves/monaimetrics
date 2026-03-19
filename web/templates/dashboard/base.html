@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Monaimetrics{% endblock %}</title>
-    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=2">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=3">
 </head>
 <body>
     <div class="layout">
@@ -14,6 +14,7 @@
             <nav class="topbar-nav">
                 <a href="{% url 'dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">Portfolio</a>
                 <a href="{% url 'lookup' %}" class="{% if request.resolver_match.url_name == 'lookup' %}active{% endif %}">Lookup</a>
+                <a href="{% url 'scan' %}" class="{% if request.resolver_match.url_name == 'scan' %}active{% endif %}">Scan</a>
                 <a href="{% url 'research' %}" class="{% if request.resolver_match.url_name == 'research' %}active{% endif %}">Research</a>
                 <a href="{% url 'arb' %}" class="{% if request.resolver_match.url_name == 'arb' %}active{% endif %}">Arb</a>
                 <a href="{% url 'settings' %}" class="{% if request.resolver_match.url_name == 'settings' %}active{% endif %}">Settings</a>

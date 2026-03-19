@@ -142,6 +142,93 @@ def get_symbol_data(symbol: str, risk_profile: str = "moderate") -> dict:
     }
 
 
+DEFAULT_SCAN_UNIVERSE = [
+    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA",
+    "JPM", "V", "UNH", "JNJ", "HD", "PG", "MA", "XOM",
+    "BAC", "DIS", "NFLX", "AMD", "COIN", "AVGO", "CRM",
+]
+
+
+def scan_for_opportunities(
+    risk_profile: str = "moderate",
+    symbols: list[str] | None = None,
+) -> dict:
+    try:
+        profile = RiskProfile(risk_profile)
+    except ValueError:
+        profile = RiskProfile.MODERATE
+
+    config = load_config(profile)
+    clients = AlpacaClients(config.api)
+
+    watchlist = symbols if symbols else DEFAULT_SCAN_UNIVERSE
+
+    try:
+        account = get_account(clients)
+    except Exception as e:
+        return {"error": str(e), "signals": [], "scanned": [], "limit_usd": config.max_position_usd}
+
+    results = []
+    errors = []
+
+    from monaimetrics.data_input import get_technical_data
+    from monaimetrics.strategy import evaluate_opportunity
+    from monaimetrics.config import Tier
+
+    available_capital = account.buying_power if account.buying_power > 0 else account.cash
+
+    for sym in watchlist:
+        try:
+            tech = get_technical_data(sym, clients=clients)
+            signal = evaluate_opportunity(
+                symbol=sym,
+                tech=tech,
+                tier=Tier.MODERATE,
+                available_capital=available_capital,
+                config=config,
+            )
+            if signal is None:
+                continue
+
+            capped_size = min(signal.position_size_usd, config.max_position_usd)
+            results.append({
+                "symbol": sym,
+                "action": signal.action.value.upper(),
+                "tier": signal.tier.value,
+                "confidence": signal.confidence,
+                "urgency": signal.urgency.value,
+                "reasons": signal.reasons,
+                "position_size_usd": round(capped_size, 2),
+                "stop_price": round(signal.stop_price, 2) if signal.stop_price else None,
+                "target_price": round(signal.target_price, 2) if signal.target_price else None,
+                "price": round(tech.price, 2),
+                "stage": tech.stage,
+                "stage_label": {1: "Basing", 2: "Advancing", 3: "Topping", 4: "Declining"}.get(tech.stage, "Unknown"),
+                "volume_ratio": round(tech.volume_ratio, 2) if tech.volume_ratio else None,
+            })
+        except Exception as e:
+            errors.append({"symbol": sym, "error": str(e)})
+            log.warning("Scan failed for %s: %s", sym, e)
+
+    buy_signals = [r for r in results if r["action"] == "BUY"]
+    buy_signals.sort(key=lambda r: r["confidence"], reverse=True)
+    other_signals = [r for r in results if r["action"] != "BUY"]
+
+    return {
+        "error": None,
+        "buy_signals": buy_signals,
+        "other_signals": other_signals,
+        "scan_errors": errors,
+        "scanned": watchlist,
+        "limit_usd": config.max_position_usd,
+        "profile": profile.value,
+        "account": {
+            "portfolio_value": account.portfolio_value,
+            "cash": account.cash,
+        },
+    }
+
+
 def get_allocation_for_profile(profile_name: str) -> dict:
     try:
         profile = RiskProfile(profile_name)
