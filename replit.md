@@ -65,6 +65,7 @@ Monaimetrics is a Python trading dashboard that connects to Alpaca's trading API
 
 ### Safety Controls
 - `MAX_POSITION_USD` env var (default: `2.0`) — hard dollar cap enforced in `trading_interface._check_position_size` before any order is submitted; all scan signals are also capped to this value
+- `DRY_RUN=true` env var — skips actual order submission; default is `false` (live execution)
 - `ALPACA_PAPER=true` env var — switches Alpaca client to paper trading mode (default: live)
 
 ## Running

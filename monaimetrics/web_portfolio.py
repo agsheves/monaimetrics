@@ -4,6 +4,7 @@ import logging
 from monaimetrics.config import load_config, RiskProfile, ALLOCATION_TABLES
 from monaimetrics.data_input import (
     AlpacaClients, get_account, get_positions, get_technical_data,
+    get_tradeable_assets,
 )
 from monaimetrics.portfolio_manager import PortfolioManager
 from monaimetrics.strategy import evaluate_opportunity, generate_plan, ManagedPosition
@@ -142,13 +143,6 @@ def get_symbol_data(symbol: str, risk_profile: str = "moderate") -> dict:
     }
 
 
-DEFAULT_SCAN_UNIVERSE = [
-    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA",
-    "JPM", "V", "UNH", "JNJ", "HD", "PG", "MA", "XOM",
-    "BAC", "DIS", "NFLX", "AMD", "COIN", "AVGO", "CRM",
-]
-
-
 def scan_for_opportunities(
     risk_profile: str = "moderate",
     symbols: list[str] | None = None,
@@ -161,12 +155,19 @@ def scan_for_opportunities(
     config = load_config(profile)
     clients = AlpacaClients(config.api)
 
-    watchlist = symbols if symbols else DEFAULT_SCAN_UNIVERSE
-
     try:
         account = get_account(clients)
     except Exception as e:
-        return {"error": str(e), "signals": [], "scanned": [], "limit_usd": config.max_position_usd}
+        return {"error": str(e), "buy_signals": [], "other_signals": [], "scan_errors": [],
+                "scanned": [], "limit_usd": config.max_position_usd, "universe_size": 0,
+                "profile": profile.value}
+
+    if symbols:
+        watchlist = symbols
+        universe_size = len(symbols)
+    else:
+        watchlist = get_tradeable_assets(clients, limit=150)
+        universe_size = len(watchlist)
 
     results = []
     errors = []
@@ -220,7 +221,9 @@ def scan_for_opportunities(
         "other_signals": other_signals,
         "scan_errors": errors,
         "scanned": watchlist,
+        "universe_size": universe_size,
         "limit_usd": config.max_position_usd,
+        "dry_run": config.dry_run,
         "profile": profile.value,
         "account": {
             "portfolio_value": account.portfolio_value,

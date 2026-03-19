@@ -5,8 +5,13 @@
 <div class="page-header">
     <h2>Opportunity Scan</h2>
     <p class="page-subtitle">
-        Dry-run signal scan across {{ data.scanned|length }} symbol{{ data.scanned|length|pluralize }}.
-        Position limit: <strong>${{ data.limit_usd }}</strong> per trade.
+        {% if data.dry_run %}
+            <span class="badge badge-action-hold" style="vertical-align:middle;">DRY RUN</span>
+        {% else %}
+            <span class="badge badge-action-buy" style="vertical-align:middle;">LIVE</span>
+        {% endif %}
+        Scanned {{ data.scanned|length }} of {{ data.universe_size }} symbols in universe.
+        Position limit: <strong>${{ data.limit_usd }}</strong> per trade &mdash; profile: <strong>{{ data.profile }}</strong>.
     </p>
 </div>
 
