@@ -6,8 +6,7 @@ from monaimetrics.data_input import (
     AlpacaClients, get_account, get_positions, get_technical_data,
     get_tradeable_assets,
 )
-from monaimetrics.portfolio_manager import PortfolioManager
-from monaimetrics.strategy import evaluate_opportunity, generate_plan, ManagedPosition
+from monaimetrics.strategy import evaluate_opportunity
 
 log = logging.getLogger(__name__)
 
@@ -108,22 +107,27 @@ def get_symbol_data(symbol: str, risk_profile: str = "moderate") -> dict:
 
     signal = None
     try:
-        pm = PortfolioManager(config, clients)
+        from monaimetrics.config import Tier
         account = get_account(clients)
-        pm.peak_value = account.portfolio_value
-        plan, _ = pm.run_assessment(watchlist=[symbol])
-        if plan.signals:
-            sig = plan.signals[0]
-            signal = {
-                "action": sig.action.value.upper(),
-                "tier": sig.tier.value,
-                "confidence": sig.confidence,
-                "urgency": sig.urgency.value,
-                "reasons": sig.reasons,
-                "position_size_usd": sig.position_size_usd,
-                "stop_price": sig.stop_price,
-                "target_price": sig.target_price,
-            }
+        available_capital = account.buying_power if account.buying_power > 0 else account.cash
+        sig = evaluate_opportunity(
+            symbol=symbol,
+            tech=tech,
+            tier=Tier.MODERATE,
+            available_capital=available_capital,
+            config=config,
+        )
+        capped_size = min(sig.position_size_usd, config.max_position_usd)
+        signal = {
+            "action": sig.action.value.upper(),
+            "tier": sig.tier.value,
+            "confidence": sig.confidence,
+            "urgency": sig.urgency.value,
+            "reasons": sig.reasons,
+            "position_size_usd": round(capped_size, 2),
+            "stop_price": round(sig.stop_price, 2) if sig.stop_price else None,
+            "target_price": round(sig.target_price, 2) if sig.target_price else None,
+        }
     except Exception as e:
         log.warning("Could not generate signal for %s: %s", symbol, e)
 
