@@ -12,12 +12,19 @@ log = logging.getLogger(__name__)
 
 
 def get_portfolio_data(risk_profile: str = "moderate") -> dict:
+    from monaimetrics import runtime_settings
+    rt = runtime_settings.load()
+
     try:
         profile = RiskProfile(risk_profile)
     except ValueError:
         profile = RiskProfile.MODERATE
 
-    config = load_config(profile)
+    config = load_config(profile, runtime={
+        "min_position_usd": rt.min_position_usd,
+        "max_position_usd": rt.max_position_usd,
+        "dry_run": rt.dry_run,
+    })
     clients = AlpacaClients(config.api)
 
     try:
@@ -72,12 +79,19 @@ def get_portfolio_data(risk_profile: str = "moderate") -> dict:
 
 
 def get_symbol_data(symbol: str, risk_profile: str = "moderate") -> dict:
+    from monaimetrics import runtime_settings
+    rt = runtime_settings.load()
+
     try:
         profile = RiskProfile(risk_profile)
     except ValueError:
         profile = RiskProfile.MODERATE
 
-    config = load_config(profile)
+    config = load_config(profile, runtime={
+        "min_position_usd": rt.min_position_usd,
+        "max_position_usd": rt.max_position_usd,
+        "dry_run": rt.dry_run,
+    })
     clients = AlpacaClients(config.api)
 
     try:
@@ -108,16 +122,19 @@ def get_symbol_data(symbol: str, risk_profile: str = "moderate") -> dict:
     signal = None
     try:
         from monaimetrics.config import Tier
+        from monaimetrics.fundamental_data import get_fundamentals
         account = get_account(clients)
         available_capital = account.buying_power if account.buying_power > 0 else account.cash
+        fund = get_fundamentals(symbol)
         sig = evaluate_opportunity(
             symbol=symbol,
             tech=tech,
             tier=Tier.MODERATE,
             available_capital=available_capital,
             config=config,
+            fundamentals=fund,
         )
-        capped_size = min(sig.position_size_usd, config.max_position_usd)
+        capped_size = max(config.min_position_usd, min(sig.position_size_usd, config.max_position_usd))
         signal = {
             "action": sig.action.value.upper(),
             "tier": sig.tier.value,
@@ -151,12 +168,19 @@ def scan_for_opportunities(
     risk_profile: str = "moderate",
     symbols: list[str] | None = None,
 ) -> dict:
+    from monaimetrics import runtime_settings
+    rt = runtime_settings.load()
+
     try:
         profile = RiskProfile(risk_profile)
     except ValueError:
         profile = RiskProfile.MODERATE
 
-    config = load_config(profile)
+    config = load_config(profile, runtime={
+        "min_position_usd": rt.min_position_usd,
+        "max_position_usd": rt.max_position_usd,
+        "dry_run": rt.dry_run,
+    })
     clients = AlpacaClients(config.api)
 
     try:
@@ -170,7 +194,7 @@ def scan_for_opportunities(
         watchlist = symbols
         universe_size = len(symbols)
     else:
-        watchlist = get_tradeable_assets(clients, limit=150)
+        watchlist = get_tradeable_assets(clients, limit=rt.scan_universe_limit)
         universe_size = len(watchlist)
 
     results = []
@@ -179,18 +203,21 @@ def scan_for_opportunities(
     from monaimetrics.data_input import get_technical_data
     from monaimetrics.strategy import evaluate_opportunity
     from monaimetrics.config import Tier
+    from monaimetrics.fundamental_data import get_fundamentals
 
     available_capital = account.buying_power if account.buying_power > 0 else account.cash
 
     for sym in watchlist:
         try:
             tech = get_technical_data(sym, clients=clients)
+            fund = get_fundamentals(sym)
             signal = evaluate_opportunity(
                 symbol=sym,
                 tech=tech,
                 tier=Tier.MODERATE,
                 available_capital=available_capital,
                 config=config,
+                fundamentals=fund,
             )
             if signal is None:
                 continue

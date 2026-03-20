@@ -61,7 +61,7 @@ def _check_position_size(
     price: float,
     config: SystemConfig,
 ) -> str | None:
-    """Returns error message if order exceeds max position cap, else None."""
+    """Returns error message if order outside min/max position range, else None."""
     if request.side != "buy":
         return None
 
@@ -72,6 +72,13 @@ def _check_position_size(
         return (
             f"Order value ${order_value:,.2f} exceeds hard position limit "
             f"${config.max_position_usd:,.2f}"
+        )
+
+    # Minimum position size — avoid dust trades
+    if order_value < config.min_position_usd:
+        return (
+            f"Order value ${order_value:,.2f} below minimum position size "
+            f"${config.min_position_usd:,.2f}"
         )
 
     return None

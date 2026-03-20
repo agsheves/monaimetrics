@@ -190,12 +190,10 @@ class TestExecutePlan:
 
 
 class TestCircuitBreakers:
-    def test_drawdown_triggers_pause(self):
+    def test_rapid_loss_triggers_pause(self):
         pm = make_pm()
-        pm.peak_value = 100000.0
-        # Simulate drawdown — mock account by setting peak high and checking
-        # Circuit breaker checks account via API, so in dry-run we test the logic
-        # by directly setting state
+        # Set peak to 0 so drawdown check is skipped (peak must be > 0)
+        pm.peak_value = 0.0
         pm.paused = False
         pm.stops_today = 3
         pm.stops_today_date = datetime.now(timezone.utc).date()

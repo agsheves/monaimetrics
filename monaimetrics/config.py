@@ -388,7 +388,8 @@ class SystemConfig:
     api: APIConfig
     alpha_signals: AlphaSignalsConfig = field(default_factory=AlphaSignalsConfig)
     dry_run: bool = True
-    max_position_usd: float = 2.0
+    min_position_usd: float = 100.0
+    max_position_usd: float = 5000.0
 
     def get_allocation(self, cycle_score: int) -> TierAllocation:
         clamped = max(-2, min(2, cycle_score))
@@ -404,8 +405,14 @@ class SystemConfig:
 
 def load_config(
     profile: RiskProfile = RiskProfile.MODERATE,
+    *,
+    runtime: dict | None = None,
 ) -> SystemConfig:
-    """Build a full SystemConfig from a risk profile and environment variables."""
+    """Build a full SystemConfig from a risk profile and environment variables.
+
+    If ``runtime`` is provided it overrides env-var defaults for:
+        dry_run, min_position_usd, max_position_usd.
+    """
 
     tier_defaults: dict[RiskProfile, dict] = {
         RiskProfile.CONSERVATIVE: dict(
@@ -440,6 +447,7 @@ def load_config(
     }
 
     overrides = tier_defaults[profile]
+    rt = runtime or {}
 
     return SystemConfig(
         profile=profile,
@@ -458,6 +466,16 @@ def load_config(
         hold_audit=HoldAuditConfig(),
         api=_load_api_config(),
         alpha_signals=AlphaSignalsConfig(),
-        dry_run=os.environ.get("DRY_RUN", "true").lower() == "true",
-        max_position_usd=float(os.environ.get("MAX_POSITION_USD", "2.0")),
+        dry_run=rt.get(
+            "dry_run",
+            os.environ.get("DRY_RUN", "true").lower() == "true",
+        ),
+        min_position_usd=float(rt.get(
+            "min_position_usd",
+            os.environ.get("MIN_POSITION_USD", "100.0"),
+        )),
+        max_position_usd=float(rt.get(
+            "max_position_usd",
+            os.environ.get("MAX_POSITION_USD", "5000.0"),
+        )),
     )
