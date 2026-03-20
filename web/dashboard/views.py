@@ -9,6 +9,7 @@ from django.views.decorators.http import require_http_methods
 from monaimetrics.web_portfolio import get_portfolio_data, get_symbol_data, get_allocation_for_profile, scan_for_opportunities
 from monaimetrics.web_research import ask_research
 from monaimetrics.web_backtest import run_web_backtest, get_backtest_info
+from monaimetrics import trade_journal as _trade_journal
 
 
 def login_required(view_func):
@@ -382,3 +383,29 @@ def allocation_preview_api(request: HttpRequest) -> JsonResponse:
     profile = request.GET.get("profile", "moderate")
     table = get_allocation_for_profile(profile)
     return JsonResponse(table)
+
+
+@login_required
+def plan_view(request: HttpRequest) -> HttpResponse:
+    plan = _trade_journal.load_latest_plan()
+
+    # Format the generated_at timestamp for display
+    generated_display = None
+    session_label = None
+    if plan:
+        try:
+            from datetime import datetime, timezone
+            import pytz
+            dt = datetime.fromisoformat(plan["generated_at"])
+            et = pytz.timezone("America/New_York")
+            dt_et = dt.astimezone(et)
+            generated_display = dt_et.strftime("%A %b %-d, %Y at %-I:%M %p ET")
+        except Exception:
+            generated_display = plan.get("generated_at", "")
+        session_label = plan.get("session", "").replace("-", " ").title()
+
+    return render(request, "dashboard/plan.html", {
+        "plan": plan,
+        "generated_display": generated_display,
+        "session_label": session_label,
+    })

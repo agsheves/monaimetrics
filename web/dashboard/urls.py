@@ -15,4 +15,5 @@ urlpatterns = [
     path("journal/", views.journal_view, name="journal"),
     path("api/unread-count/", views.api_unread_count, name="api_unread_count"),
     path("api/allocation-preview/", views.allocation_preview_api, name="allocation_preview"),
+    path("plan/", views.plan_view, name="plan"),
 ]

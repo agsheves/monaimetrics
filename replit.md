@@ -59,16 +59,21 @@ Monaimetrics is a Python trading platform that connects to Alpaca's trading API.
 2. **Portfolio** (`/`) - Portfolio value, cash, positions, allocation bar, pending trade reviews
 3. **Symbol Lookup** (`/lookup/`) - Stock lookup with price, technicals, trading signals
 4. **Scan** (`/scan/`) - Opportunity scan across the full Alpaca universe; buy candidates ranked by confidence
-5. **Backtest** (`/backtest/`) - Simulate the strategy over historical data with equity curve, trade log, win/loss stats
-6. **Research** (`/research/`) - Ask questions about trading strategies via Groq LLM, with suggested quick questions and markdown rendering
-7. **Settings** (`/settings/`) - Risk profile selector, position size min/max, universe limit, dry run toggle, human review toggle
+5. **Plan** (`/plan/`) - Forward-looking trade plan (informational); shows planned signals from the 07:00/19:00 planner runs with disclaimer that actual trades may differ
+6. **Backtest** (`/backtest/`) - Simulate the strategy over historical data with equity curve, trade log, win/loss stats
+7. **Research** (`/research/`) - Ask questions about trading strategies via Groq LLM, with suggested quick questions and markdown rendering
+8. **Journal** (`/journal/`) - Full trade journal with type and symbol filtering
+9. **Alerts** (`/notifications/`) - Notification centre with unread badge and mark-read
+10. **Settings** (`/settings/`) - Risk profile selector, position size min/max, universe limit, dry run toggle, human review toggle, webhook URL
 
 ### Automatic Trading Scheduler
 - Boots via Django's `AppConfig.ready()` hook in `web/dashboard/apps.py`
 - Implemented in `monaimetrics/scheduler.py`
+- **Planning job**: runs twice daily (07:00 ET pre-market and 19:00 ET evening, Mon-Fri). Evaluates the full strategy stack in read-only mode — never executes or queues trades. Saves results to `data/latest_plan.json` for display on the Plan page. Sends a notification when complete.
 - **Assessment job**: runs twice daily (09:45 ET and 14:00 ET, Mon-Fri). Fetches the live Alpaca universe of tradeable US equities, evaluates every symbol through the full strategy stack. If human review is enabled, signals are queued for approval. Otherwise, trades execute immediately.
 - **Stop check job**: lightweight price-only scan every 15 minutes during market hours. Fires stop-loss and trailing-stop sells immediately (always, even when human review is enabled).
 - **Approved trades job**: checks the review queue every 2 minutes and executes approved signals.
+- **Daily digest job**: runs at 16:05 ET (just after market close). Summarises the day's activity in the journal and sends a notification.
 - Market hours: 09:30-16:00 ET, Monday-Friday only
 - All jobs respect the dry run setting
 

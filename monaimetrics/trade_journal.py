@@ -29,6 +29,7 @@ log = logging.getLogger(__name__)
 
 JOURNAL_DIR = Path(__file__).resolve().parent.parent / "data"
 JOURNAL_PATH = JOURNAL_DIR / "journal.jsonl"
+PLAN_PATH = JOURNAL_DIR / "latest_plan.json"
 _lock = Lock()
 
 
@@ -158,3 +159,26 @@ def daily_summary(date: str | None = None) -> dict:
 def recent_activity(n: int = 50) -> list[dict]:
     """Most recent events of any type, formatted for display."""
     return read_events(limit=n)
+
+
+def save_plan(plan_data: dict) -> None:
+    """Persist the latest trade plan to data/latest_plan.json."""
+    _ensure_dir()
+    with _lock:
+        try:
+            with open(PLAN_PATH, "w") as f:
+                json.dump(plan_data, f, indent=2)
+        except Exception as e:
+            log.warning("Plan write failed: %s", e)
+
+
+def load_latest_plan() -> dict | None:
+    """Return the most recent trade plan, or None if none exists yet."""
+    if not PLAN_PATH.exists():
+        return None
+    try:
+        with open(PLAN_PATH) as f:
+            return json.load(f)
+    except Exception as e:
+        log.warning("Plan read failed: %s", e)
+        return None

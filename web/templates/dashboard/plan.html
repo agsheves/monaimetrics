@@ -1,0 +1,141 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Trade Plan - Monaimetrics{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Trade Plan</h1>
+        {% if plan %}
+            <p>{{ session_label }} plan &mdash; generated {{ generated_display }}</p>
+        {% else %}
+            <p>No plan available yet</p>
+        {% endif %}
+    </div>
+    {% if plan %}
+    <div style="display:flex; gap:1.5rem; align-items:center;">
+        <div style="text-align:center;">
+            <div style="font-size:1.4rem; font-weight:700; color:var(--green);">{{ plan.buys }}</div>
+            <div style="font-size:0.7rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">Buy</div>
+        </div>
+        <div style="text-align:center;">
+            <div style="font-size:1.4rem; font-weight:700; color:var(--red);">{{ plan.sells }}</div>
+            <div style="font-size:0.7rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">Sell</div>
+        </div>
+        <div style="text-align:center;">
+            <div style="font-size:1.4rem; font-weight:700; color:var(--yellow);">{{ plan.reduces }}</div>
+            <div style="font-size:0.7rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">Reduce</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="plan-disclaimer">
+    <span class="plan-disclaimer-icon">&#9432;</span>
+    {% if plan %}
+        {{ plan.disclaimer }}
+    {% else %}
+        The trade planner runs automatically at <strong>07:00 ET</strong> (pre-market) and <strong>19:00 ET</strong> (evening) on weekdays.
+        It evaluates the full strategy stack in read-only mode and stores the results here for your review.
+        No trades are placed from this page.
+    {% endif %}
+</div>
+
+{% if plan %}
+
+<div class="card" style="margin-bottom:1rem;">
+    <div class="card-header">Market Context</div>
+    <div style="display:flex; gap:3rem; padding:0.75rem 0;">
+        <div>
+            <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">Universe Scanned</div>
+            <div style="font-size:1.1rem; font-weight:600;">{{ plan.universe_size }} symbols</div>
+        </div>
+        <div>
+            <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">VIX</div>
+            <div style="font-size:1.1rem; font-weight:600;">{% if plan.vix %}{{ plan.vix }}{% else %}N/A{% endif %}</div>
+        </div>
+        <div>
+            <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">Cycle Score</div>
+            <div style="font-size:1.1rem; font-weight:600;">{{ plan.cycle_score }}</div>
+        </div>
+        <div>
+            <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">Total Signals</div>
+            <div style="font-size:1.1rem; font-weight:600;">{{ plan.signal_count }}</div>
+        </div>
+    </div>
+</div>
+
+{% if plan.signals %}
+<div class="card">
+    <div class="card-header">Planned Signals</div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Symbol</th>
+                <th>Action</th>
+                <th>Tier</th>
+                <th>Confidence</th>
+                <th>Size (USD)</th>
+                <th>Stop</th>
+                <th>Target</th>
+                <th>Rationale</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sig in plan.signals %}
+            <tr>
+                <td><strong>{{ sig.symbol }}</strong></td>
+                <td>
+                    <span class="badge badge-{% if sig.action == 'BUY' %}buy{% elif sig.action == 'SELL' %}sell{% else %}reduce{% endif %}">
+                        {{ sig.action }}
+                    </span>
+                </td>
+                <td style="text-transform:capitalize;">{{ sig.tier }}</td>
+                <td>
+                    <div style="display:flex; align-items:center; gap:0.5rem;">
+                        <div class="confidence-bar" title="{{ sig.confidence }}%">
+                            <div class="confidence-fill" style="width:{{ sig.confidence }}%"></div>
+                        </div>
+                        <span style="font-size:0.8rem; color:var(--text-secondary);">{{ sig.confidence }}%</span>
+                    </div>
+                </td>
+                <td>{% if sig.position_size_usd %}${{ sig.position_size_usd|floatformat:2 }}{% else %}&mdash;{% endif %}</td>
+                <td>{% if sig.stop_price %}${{ sig.stop_price|floatformat:2 }}{% else %}&mdash;{% endif %}</td>
+                <td>{% if sig.target_price %}${{ sig.target_price|floatformat:2 }}{% else %}&mdash;{% endif %}</td>
+                <td>
+                    {% if sig.reasons %}
+                    <ul class="reason-list">
+                        {% for r in sig.reasons %}
+                        <li>{{ r }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}&mdash;{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% else %}
+<div class="card">
+    <p style="color:var(--text-muted); padding:1rem 0;">
+        The last planning run found no actionable signals across {{ plan.universe_size }} symbols.
+        This can happen when market conditions don't meet the strategy thresholds — that's the system working as intended.
+    </p>
+</div>
+{% endif %}
+
+{% else %}
+<div class="card">
+    <div style="padding:2rem; text-align:center; color:var(--text-muted);">
+        <div style="font-size:2rem; margin-bottom:1rem;">&#128200;</div>
+        <p style="margin-bottom:0.5rem;">No plan has been generated yet.</p>
+        <p style="font-size:0.85rem;">
+            The planner runs automatically at <strong style="color:var(--text-secondary);">07:00 ET</strong> and
+            <strong style="color:var(--text-secondary);">19:00 ET</strong> on weekdays.
+            Check back after the next scheduled run.
+        </p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

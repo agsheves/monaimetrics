@@ -39,6 +39,11 @@ ASSESSMENT_TIMES = [
     {"hour": 14, "minute": 0},
 ]
 
+PLANNING_TIMES = [
+    {"hour": 7,  "minute": 0},
+    {"hour": 19, "minute": 0},
+]
+
 
 def _is_market_open() -> bool:
     now = datetime.now(ET)
@@ -280,6 +285,123 @@ def run_approved_trades_job() -> None:
         log.exception("Scheduler: approved trades execution failed")
 
 
+def run_planning_job() -> None:
+    """Generate a forward-looking trade plan without executing anything.
+
+    Runs at 07:00 ET (pre-market preview) and 19:00 ET (evening planning).
+    Evaluates the full strategy stack in read-only mode, then saves the
+    resulting signals to data/latest_plan.json for display in the UI.
+
+    Plans are informational only — actual trades may differ when markets
+    open due to live prices, volume, and changing conditions.
+    """
+    from monaimetrics.data_input import AlpacaClients, get_tradeable_assets
+    from monaimetrics.portfolio_manager import PortfolioManager
+    from monaimetrics import trade_journal
+    from monaimetrics import notifications
+    from monaimetrics.market_intelligence import fetch_vix, compute_cycle_score
+    from datetime import timezone
+
+    now = datetime.now(ET)
+    if now.weekday() >= 5:
+        log.debug("Planner: weekend, skipping")
+        return
+
+    session = "pre-market" if now.hour < 12 else "evening"
+
+    try:
+        config, rt = _load_runtime_config()
+        clients = AlpacaClients(config.api)
+
+        vix = fetch_vix()
+        cycle_score = compute_cycle_score(vix=vix)
+
+        universe = get_tradeable_assets(clients, limit=rt.scan_universe_limit)
+        log.info(
+            "Planner [%s]: starting — %d symbols, VIX≈%s, cycle=%d",
+            session, len(universe),
+            f"{vix:.1f}" if vix else "N/A",
+            cycle_score,
+        )
+
+        pm = PortfolioManager(config, clients, restore_state=True)
+        pm.cycle_score = cycle_score
+        pm.reconcile_positions()
+
+        # Always read-only — never execute, never touch the review queue
+        plan, _ = pm.run_assessment(watchlist=universe, execute=False)
+
+        signals = []
+        for sig in plan.signals:
+            if sig.action.value in ("buy", "sell", "reduce"):
+                signals.append({
+                    "symbol": sig.symbol,
+                    "action": sig.action.value.upper(),
+                    "tier": sig.tier.value if hasattr(sig.tier, "value") else str(sig.tier),
+                    "confidence": sig.confidence,
+                    "position_size_usd": sig.position_size_usd,
+                    "stop_price": sig.stop_price,
+                    "target_price": sig.target_price,
+                    "reasons": sig.reasons,
+                })
+
+        buys    = sum(1 for s in signals if s["action"] == "BUY")
+        sells   = sum(1 for s in signals if s["action"] == "SELL")
+        reduces = sum(1 for s in signals if s["action"] == "REDUCE")
+
+        plan_data = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "session": session,
+            "vix": round(vix, 2) if vix else None,
+            "cycle_score": cycle_score,
+            "universe_size": len(universe),
+            "signal_count": len(signals),
+            "buys": buys,
+            "sells": sells,
+            "reduces": reduces,
+            "signals": signals,
+            "disclaimer": (
+                "These are planned trades based on current data. "
+                "Actual trades may differ when markets open due to live prices, "
+                "volume, and changing conditions."
+            ),
+        }
+
+        trade_journal.save_plan(plan_data)
+
+        trade_journal.log_event(
+            "TRADE_PLAN",
+            data={
+                "session": session,
+                "signal_count": len(signals),
+                "universe_size": len(universe),
+                "vix": vix,
+                "cycle_score": cycle_score,
+            },
+            reasons=[
+                f"{session.capitalize()} plan: {len(signals)} signal(s) across {len(universe)} symbols",
+                f"VIX≈{vix:.1f}, cycle={cycle_score}" if vix else f"VIX=N/A, cycle={cycle_score}",
+                f"{buys} buy, {sells} sell, {reduces} reduce",
+            ],
+        )
+
+        notifications.notify(
+            "TRADE_PLAN",
+            f"Trade Plan ({session}): {len(signals)} signal(s)",
+            f"{buys} buy, {sells} sell, {reduces} reduce planned. "
+            f"Scanned {len(universe)} symbols. View full plan in the app.",
+            priority="info",
+        )
+
+        log.info(
+            "Planner [%s]: complete — %d signal(s): %d buy, %d sell, %d reduce",
+            session, len(signals), buys, sells, reduces,
+        )
+
+    except Exception:
+        log.exception("Scheduler: planning job failed")
+
+
 def run_daily_digest_job() -> None:
     """End-of-day summary: log digest and send notification."""
     from monaimetrics import trade_journal
@@ -327,6 +449,24 @@ def start(run_assessment: bool = True, run_stops: bool = True) -> None:
         "SYSTEM", action="STARTUP",
         reasons=["Trading scheduler started"],
     )
+
+    # Trade planning jobs at 07:00 and 19:00 ET (Mon-Fri, read-only, no execution)
+    for i, t in enumerate(PLANNING_TIMES):
+        scheduler.add_job(
+            run_planning_job,
+            trigger=CronTrigger(
+                day_of_week="mon-fri",
+                hour=t["hour"],
+                minute=t["minute"],
+                timezone=ET,
+            ),
+            id=f"planning_{i}",
+            name=f"Trade plan at {t['hour']:02d}:{t['minute']:02d} ET",
+            replace_existing=True,
+            misfire_grace_time=300,
+        )
+    times_str = ", ".join(f"{t['hour']:02d}:{t['minute']:02d}" for t in PLANNING_TIMES)
+    log.info("Scheduler: planning jobs registered at %s ET (Mon-Fri)", times_str)
 
     if run_assessment:
         for i, t in enumerate(ASSESSMENT_TIMES):
