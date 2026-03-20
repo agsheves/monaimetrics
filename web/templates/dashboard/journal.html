@@ -1,0 +1,81 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Journal - Monaimetrics{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Trade Journal</h1>
+    <p>Complete log of all system activity</p>
+</div>
+
+<div class="card">
+    <form method="get" class="inline-form" style="margin-bottom: 1rem;">
+        <div class="form-group">
+            <label>Event Type</label>
+            <select name="type" onchange="this.form.submit()">
+                <option value="">All</option>
+                <option value="EXECUTION" {% if filter_type == "EXECUTION" %}selected{% endif %}>Execution</option>
+                <option value="STOP_TRIGGERED" {% if filter_type == "STOP_TRIGGERED" %}selected{% endif %}>Stop Triggered</option>
+                <option value="ASSESSMENT" {% if filter_type == "ASSESSMENT" %}selected{% endif %}>Assessment</option>
+                <option value="CIRCUIT_BREAKER" {% if filter_type == "CIRCUIT_BREAKER" %}selected{% endif %}>Circuit Breaker</option>
+                <option value="RECONCILIATION" {% if filter_type == "RECONCILIATION" %}selected{% endif %}>Reconciliation</option>
+                <option value="SYSTEM" {% if filter_type == "SYSTEM" %}selected{% endif %}>System</option>
+                <option value="DIGEST" {% if filter_type == "DIGEST" %}selected{% endif %}>Digest</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Symbol</label>
+            <input type="text" name="symbol" value="{{ filter_symbol }}" placeholder="e.g. AAPL">
+        </div>
+        <button type="submit" class="btn btn-secondary" style="margin-bottom: 0;">Filter</button>
+    </form>
+</div>
+
+{% if events %}
+<div class="card">
+    <div class="card-title">Events ({{ events|length }})</div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Type</th>
+                    <th>Symbol</th>
+                    <th>Action</th>
+                    <th>Price</th>
+                    <th>Qty</th>
+                    <th>Value</th>
+                    <th>Confidence</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in events %}
+                <tr>
+                    <td style="font-size:0.78rem; white-space:nowrap; color:var(--text-muted);">{{ e.ts_display }}</td>
+                    <td><span class="badge badge-{{ e.type|lower }}">{{ e.type }}</span></td>
+                    <td>{% if e.symbol %}<strong>{{ e.symbol }}</strong>{% else %}&mdash;{% endif %}</td>
+                    <td>{% if e.action %}<span class="badge badge-action-{{ e.action|lower }}">{{ e.action }}</span>{% else %}&mdash;{% endif %}</td>
+                    <td>{% if e.price %}${{ e.price }}{% else %}&mdash;{% endif %}</td>
+                    <td>{% if e.qty %}{{ e.qty }}{% else %}&mdash;{% endif %}</td>
+                    <td>{% if e.value %}${{ e.value }}{% else %}&mdash;{% endif %}</td>
+                    <td>{% if e.confidence %}{{ e.confidence }}{% else %}&mdash;{% endif %}</td>
+                </tr>
+                {% if e.reasons %}
+                <tr class="scan-reasons-row">
+                    <td colspan="8">
+                        <ul class="reasons-list">
+                            {% for r in e.reasons %}<li>{{ r }}</li>{% endfor %}
+                        </ul>
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <p style="color: var(--text-muted); padding: 1rem 0;">No journal entries{% if filter_type or filter_symbol %} matching your filter{% endif %}. The scheduler logs activity as it runs.</p>
+</div>
+{% endif %}
+{% endblock %}

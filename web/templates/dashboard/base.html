@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Monaimetrics{% endblock %}</title>
-    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=4">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=5">
 </head>
 <body>
     <div class="layout">
@@ -17,6 +17,8 @@
                 <a href="{% url 'scan' %}" class="{% if request.resolver_match.url_name == 'scan' %}active{% endif %}">Scan</a>
                 <a href="{% url 'backtest' %}" class="{% if request.resolver_match.url_name == 'backtest' %}active{% endif %}">Backtest</a>
                 <a href="{% url 'research' %}" class="{% if request.resolver_match.url_name == 'research' %}active{% endif %}">Research</a>
+                <a href="{% url 'journal' %}" class="{% if request.resolver_match.url_name == 'journal' %}active{% endif %}">Journal</a>
+                <a href="{% url 'notifications' %}" class="{% if request.resolver_match.url_name == 'notifications' %}active{% endif %} nav-notif-link">Alerts<span id="notif-badge" class="notif-badge" style="display:none"></span></a>
                 <a href="{% url 'settings' %}" class="{% if request.resolver_match.url_name == 'settings' %}active{% endif %}">Settings</a>
             </nav>
             <a href="{% url 'logout' %}" class="topbar-logout">Sign out</a>
@@ -26,5 +28,25 @@
         </main>
     </div>
     {% block scripts %}{% endblock %}
+    <script>
+    (function() {
+        function updateBadge() {
+            fetch("{% url 'api_unread_count' %}")
+                .then(r => r.json())
+                .then(d => {
+                    var badge = document.getElementById("notif-badge");
+                    if (d.unread > 0) {
+                        badge.textContent = d.unread > 99 ? "99+" : d.unread;
+                        badge.style.display = "inline-flex";
+                    } else {
+                        badge.style.display = "none";
+                    }
+                })
+                .catch(() => {});
+        }
+        updateBadge();
+        setInterval(updateBadge, 30000);
+    })();
+    </script>
 </body>
 </html>

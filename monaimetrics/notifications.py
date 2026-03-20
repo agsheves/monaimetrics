@@ -74,6 +74,13 @@ def notify(
             log.warning("Notification write failed: %s", e)
 
     webhook_url = os.environ.get("NOTIFICATION_WEBHOOK_URL", "")
+    if not webhook_url:
+        try:
+            from monaimetrics import runtime_settings
+            rt = runtime_settings.load()
+            webhook_url = rt.webhook_url
+        except Exception:
+            pass
     if webhook_url:
         _send_webhook(webhook_url, notification)
 

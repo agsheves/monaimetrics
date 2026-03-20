@@ -51,7 +51,7 @@ def logout_view(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def dashboard_view(request: HttpRequest) -> HttpResponse:
-    from monaimetrics import runtime_settings, review_queue
+    from monaimetrics import runtime_settings, review_queue, trade_journal, notifications
 
     rt = runtime_settings.load()
     profile = rt.risk_profile
@@ -75,7 +75,23 @@ def dashboard_view(request: HttpRequest) -> HttpResponse:
         for s in pending
     ]
 
+    # Recent activity for timeline
+    activity = trade_journal.recent_activity(n=20)
+    for event in activity:
+        ts = event.get("ts", "")
+        if ts:
+            try:
+                from datetime import datetime as _dt
+                dt = _dt.fromisoformat(ts)
+                event["ts_display"] = dt.strftime("%H:%M:%S")
+                event["date_display"] = dt.strftime("%b %d")
+            except Exception:
+                event["ts_display"] = ts[:19]
+                event["date_display"] = ""
+
     data["pending_reviews"] = pending_data
+    data["activity"] = list(reversed(activity))
+    data["unread_count"] = notifications.unread_count()
     data["human_review"] = rt.human_review
     data["dry_run"] = rt.dry_run
     data["settings"] = {
@@ -152,6 +168,9 @@ def settings_view(request: HttpRequest) -> HttpResponse:
         # Toggles
         rt.dry_run = request.POST.get("dry_run") == "on"
         rt.human_review = request.POST.get("human_review") == "on"
+
+        # Webhook
+        rt.webhook_url = request.POST.get("webhook_url", "").strip()
 
         runtime_settings.save(rt)
 
@@ -276,6 +295,86 @@ def backtest_view(request: HttpRequest) -> HttpResponse:
     response = render(request, "dashboard/backtest.html", context)
     response["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return response
+
+
+@login_required
+def notifications_view(request: HttpRequest) -> HttpResponse:
+    from monaimetrics import notifications
+
+    if request.method == "POST":
+        action = request.POST.get("action", "")
+        if action == "mark_all_read":
+            notifications.mark_all_read()
+        elif action == "mark_read":
+            nid = request.POST.get("notification_id", "")
+            if nid:
+                notifications.mark_read([nid])
+        return redirect("notifications")
+
+    all_notifs = notifications.get_notifications(limit=100)
+    read_ids = notifications._get_read_ids()
+
+    for n in all_notifs:
+        n["is_read"] = n.get("id", "") in read_ids
+        ts = n.get("ts", "")
+        if ts:
+            try:
+                from datetime import datetime as _dt
+                dt = _dt.fromisoformat(ts)
+                n["ts_display"] = dt.strftime("%H:%M:%S")
+                n["date_display"] = dt.strftime("%b %d")
+            except Exception:
+                n["ts_display"] = ts[:19]
+                n["date_display"] = ""
+
+    all_notifs.reverse()
+
+    response = render(request, "dashboard/notifications.html", {
+        "notifications": all_notifs,
+        "unread_count": notifications.unread_count(),
+    })
+    response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
+
+
+@login_required
+def journal_view(request: HttpRequest) -> HttpResponse:
+    from monaimetrics import trade_journal
+
+    event_type = request.GET.get("type", "").strip().upper() or None
+    symbol = request.GET.get("symbol", "").strip().upper() or None
+
+    events = trade_journal.read_events(
+        event_type=event_type,
+        symbol=symbol,
+        limit=200,
+    )
+
+    for event in events:
+        ts = event.get("ts", "")
+        if ts:
+            try:
+                from datetime import datetime as _dt
+                dt = _dt.fromisoformat(ts)
+                event["ts_display"] = dt.strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                event["ts_display"] = ts[:19]
+
+    events.reverse()
+
+    response = render(request, "dashboard/journal.html", {
+        "events": events,
+        "filter_type": event_type or "",
+        "filter_symbol": symbol or "",
+    })
+    response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
+
+
+@login_required
+def api_unread_count(request: HttpRequest) -> JsonResponse:
+    from monaimetrics import notifications
+    return JsonResponse({"unread": notifications.unread_count()})
 
 
 @login_required

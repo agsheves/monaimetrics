@@ -73,6 +73,19 @@
         </div>
     </div>
 
+    <div class="card">
+        <div class="card-title">Notifications</div>
+        <div class="form-group">
+            <label for="webhook_url">Webhook URL (optional)</label>
+            <input type="text" id="webhook_url" name="webhook_url"
+                   value="{{ settings.webhook_url }}"
+                   placeholder="https://hooks.slack.com/...">
+            <p style="color: var(--text-muted); font-size: 0.78rem; margin-top: 0.25rem;">
+                POST JSON alerts to this URL. Works with Slack, Discord, or any webhook endpoint.
+            </p>
+        </div>
+    </div>
+
     <button type="submit" class="btn btn-primary" style="margin-bottom: 1.5rem;">Save Settings</button>
 </form>
 

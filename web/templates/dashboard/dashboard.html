@@ -178,4 +178,34 @@
 </div>
 
 {% endif %}
+
+{% if data.activity %}
+<div class="card">
+    <div class="card-title">Recent Activity</div>
+    <div class="activity-timeline">
+        {% for e in data.activity %}
+        <div class="activity-item activity-type-{{ e.type|lower }}">
+            <div class="activity-dot"></div>
+            <div class="activity-content">
+                <div class="activity-header">
+                    <span class="badge badge-{{ e.type|lower }}">{{ e.type }}</span>
+                    {% if e.symbol %}<strong>{{ e.symbol }}</strong>{% endif %}
+                    {% if e.action %}<span class="badge badge-action-{{ e.action|lower }}">{{ e.action }}</span>{% endif %}
+                    <span class="activity-time">{{ e.date_display }} {{ e.ts_display }}</span>
+                </div>
+                {% if e.reasons %}
+                <div class="activity-reasons">
+                    {% for r in e.reasons %}<span>{{ r }}</span>{% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <div style="margin-top: 0.75rem; text-align: right;">
+        <a href="{% url 'journal' %}" class="small">View full journal &rarr;</a>
+    </div>
+</div>
+{% endif %}
+
 {% endblock %}

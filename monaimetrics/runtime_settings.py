@@ -39,6 +39,9 @@ class RuntimeSettings:
     # Universe
     scan_universe_limit: int = 200
 
+    # Notifications
+    webhook_url: str = ""
+
 
 def load() -> RuntimeSettings:
     """Load settings from disk. Returns defaults if file doesn't exist."""
