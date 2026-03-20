@@ -66,14 +66,13 @@ def _check_position_size(
         return None
 
     order_value = request.qty * price
-    max_moderate = config.moderate_tier.max_position
-    max_high = config.high_risk_tier.max_position
-    max_allowed = max(max_moderate, max_high)
 
-    # Can't check tier-specific cap without knowing the tier, so use the
-    # loosest cap as a safety net. Strategy already applies the correct cap.
-    if order_value > max_allowed * 1_000_000:
-        return f"Order value ${order_value:,.0f} exceeds safety cap"
+    # Hard dollar cap — overrides all other sizing logic
+    if order_value > config.max_position_usd:
+        return (
+            f"Order value ${order_value:,.2f} exceeds hard position limit "
+            f"${config.max_position_usd:,.2f}"
+        )
 
     return None
 

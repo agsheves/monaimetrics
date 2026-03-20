@@ -58,9 +58,24 @@ Monaimetrics is a Python trading dashboard that connects to Alpaca's trading API
 1. **Login** (`/login/`) - Simple username/password auth
 2. **Portfolio** (`/`) - Portfolio value, cash, positions, allocation bar
 3. **Symbol Lookup** (`/lookup/`) - Stock lookup with price, technicals, trading signals
-4. **Research** (`/research/`) - Ask questions about trading strategies via Groq LLM
-5. **Arb Trading** (`/arb/`) - Kalshi prediction market arbitrage dashboard (separate from stock portfolio)
-6. **Settings** (`/settings/`) - Risk profile selector with allocation table preview
+4. **Scan** (`/scan/`) - Dry-run opportunity scan across a symbol universe; buy candidates ranked by confidence
+5. **Research** (`/research/`) - Ask questions about trading strategies via Groq LLM
+6. **Arb Trading** (`/arb/`) - Kalshi prediction market arbitrage dashboard (separate from stock portfolio)
+7. **Settings** (`/settings/`) - Risk profile selector with allocation table preview
+
+### Automatic Trading Scheduler
+- Boots via Django's `AppConfig.ready()` hook in `web/dashboard/apps.py`
+- Implemented in `monaimetrics/scheduler.py`
+- **Assessment job**: runs twice daily (09:45 ET and 14:00 ET, Mon–Fri). Fetches the live Alpaca universe of tradeable US equities (`SCAN_UNIVERSE_LIMIT`, default 150), evaluates every symbol through the full strategy stack (stage analysis, Kelly sizing, cycle positioning, risk tier allocation), executes buy/sell/reduce signals that meet the rules.
+- **Stop check job**: lightweight price-only scan of current positions every `STOP_CHECK_INTERVAL_MINUTES` (default: 15) during market hours — fires stop-loss and trailing-stop sells immediately without waiting for the next assessment.
+- Market hours: 09:30–16:00 ET, Monday–Friday only
+- Both jobs log activity and respect `DRY_RUN` — no orders are submitted in dry run mode
+- Uses Django's `RUN_MAIN` env var guard to avoid double-starting under the StatReloader
+
+### Safety Controls
+- `MAX_POSITION_USD` env var (default: `2.0`) — hard dollar cap enforced in `trading_interface._check_position_size` before any order is submitted; all scan signals are also capped to this value
+- `DRY_RUN` env var — skips actual order submission; **default is `true`** (safe mode). Set `DRY_RUN=false` to enable live execution.
+- `ALPACA_PAPER=true` env var — switches Alpaca client to paper trading mode (default: live)
 
 ## Running
 - **Web UI**: `python manage.py runserver 0.0.0.0:5000`

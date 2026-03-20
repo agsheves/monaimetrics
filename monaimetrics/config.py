@@ -325,7 +325,8 @@ FRAMEWORK_WEIGHTS: dict[Tier, FrameworkWeights] = {
 class APIConfig:
     alpaca_api_key: str = ""
     alpaca_secret_key: str = ""
-    alpaca_base_url: str = "https://paper-api.alpaca.markets/v2"
+    alpaca_paper: bool = False
+    alpaca_base_url: str = "https://api.alpaca.markets/v2"
     financial_datasets_api_key: str = ""
     sentiment_api_url: str = ""
     sentiment_api_key: str = ""
@@ -338,8 +339,9 @@ def _load_api_config() -> APIConfig:
     return APIConfig(
         alpaca_api_key=os.environ.get("ALPACA_API_KEY", ""),
         alpaca_secret_key=os.environ.get("ALPACA_SECRET_KEY", ""),
+        alpaca_paper=os.environ.get("ALPACA_PAPER", "false").lower() == "true",
         alpaca_base_url=os.environ.get(
-            "ALPACA_BASE_URL", "https://paper-api.alpaca.markets/v2"
+            "ALPACA_BASE_URL", "https://api.alpaca.markets/v2"
         ),
         financial_datasets_api_key=os.environ.get("FINANCIAL_DATASETS_API_KEY", ""),
         sentiment_api_url=os.environ.get("SENTIMENT_API_URL", ""),
@@ -386,6 +388,7 @@ class SystemConfig:
     api: APIConfig
     alpha_signals: AlphaSignalsConfig = field(default_factory=AlphaSignalsConfig)
     dry_run: bool = True
+    max_position_usd: float = 2.0
 
     def get_allocation(self, cycle_score: int) -> TierAllocation:
         clamped = max(-2, min(2, cycle_score))
@@ -455,5 +458,6 @@ def load_config(
         hold_audit=HoldAuditConfig(),
         api=_load_api_config(),
         alpha_signals=AlphaSignalsConfig(),
-        dry_run=True,
+        dry_run=os.environ.get("DRY_RUN", "true").lower() == "true",
+        max_position_usd=float(os.environ.get("MAX_POSITION_USD", "2.0")),
     )

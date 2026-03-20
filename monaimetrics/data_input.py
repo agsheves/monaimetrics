@@ -14,6 +14,8 @@ from alpaca.data.requests import StockBarsRequest, StockSnapshotRequest
 from alpaca.data.enums import DataFeed
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.client import TradingClient
+from alpaca.trading.requests import GetAssetsRequest
+from alpaca.trading.enums import AssetClass, AssetStatus
 
 from monaimetrics.config import APIConfig, load_config
 from monaimetrics import calculators
@@ -90,7 +92,7 @@ class AlpacaClients:
             self._trading = TradingClient(
                 self._api_config.alpaca_api_key,
                 self._api_config.alpaca_secret_key,
-                paper=True,
+                paper=self._api_config.alpaca_paper,
             )
         return self._trading
 
@@ -287,6 +289,39 @@ def get_technical_data(
         stage=stage,
         timestamp=bars[-1].timestamp,
     )
+
+
+# ---------------------------------------------------------------------------
+# Asset Universe
+# ---------------------------------------------------------------------------
+
+def get_tradeable_assets(
+    clients: AlpacaClients | None = None,
+    limit: int = 150,
+) -> list[str]:
+    """
+    Returns up to `limit` symbols of active, fractionable US equities
+    from Alpaca. Fractionable is a good proxy for liquid, exchange-listed stocks.
+    """
+    import logging
+    log = logging.getLogger(__name__)
+    c = (clients or get_clients()).trading
+    try:
+        req = GetAssetsRequest(
+            asset_class=AssetClass.US_EQUITY,
+            status=AssetStatus.ACTIVE,
+        )
+        assets = c.get_all_assets(req)
+        liquid = [
+            a.symbol for a in assets
+            if getattr(a, "tradable", False)
+            and getattr(a, "fractionable", False)
+            and "." not in a.symbol   # exclude class-B / foreign shares
+        ]
+        return liquid[:limit]
+    except Exception as e:
+        log.warning("Could not fetch tradeable assets: %s", e)
+        return []
 
 
 # ---------------------------------------------------------------------------
