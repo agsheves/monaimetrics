@@ -40,8 +40,8 @@ ASSESSMENT_TIMES = [
 ]
 
 PLANNING_TIMES = [
-    {"hour": 7,  "minute": 0},
-    {"hour": 19, "minute": 0},
+    {"hour": 7,  "minute": 0,  "days": "mon-fri"},              # pre-market weekdays
+    {"hour": 19, "minute": 0,  "days": "sun,mon,tue,wed,thu,fri"},  # evening + Sunday before Monday
 ]
 
 
@@ -303,8 +303,8 @@ def run_planning_job() -> None:
     from datetime import timezone
 
     now = datetime.now(ET)
-    if now.weekday() >= 5:
-        log.debug("Planner: weekend, skipping")
+    if now.weekday() == 5:  # Saturday only — Sunday evening is valid for Monday prep
+        log.debug("Planner: Saturday, skipping")
         return
 
     session = "pre-market" if now.hour < 12 else "evening"
@@ -455,18 +455,19 @@ def start(run_assessment: bool = True, run_stops: bool = True) -> None:
         scheduler.add_job(
             run_planning_job,
             trigger=CronTrigger(
-                day_of_week="mon-fri",
+                day_of_week=t["days"],
                 hour=t["hour"],
                 minute=t["minute"],
                 timezone=ET,
             ),
             id=f"planning_{i}",
-            name=f"Trade plan at {t['hour']:02d}:{t['minute']:02d} ET",
+            name=f"Trade plan at {t['hour']:02d}:{t['minute']:02d} ET ({t['days']})",
             replace_existing=True,
             misfire_grace_time=300,
         )
-    times_str = ", ".join(f"{t['hour']:02d}:{t['minute']:02d}" for t in PLANNING_TIMES)
-    log.info("Scheduler: planning jobs registered at %s ET (Mon-Fri)", times_str)
+    log.info(
+        "Scheduler: planning jobs registered — 07:00 Mon-Fri, 19:00 Sun-Fri (ET)"
+    )
 
     if run_assessment:
         for i, t in enumerate(ASSESSMENT_TIMES):

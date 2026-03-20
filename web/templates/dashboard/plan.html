@@ -11,8 +11,8 @@
             <p>No plan available yet</p>
         {% endif %}
     </div>
-    {% if plan %}
     <div style="display:flex; gap:1.5rem; align-items:center;">
+        {% if plan %}
         <div style="text-align:center;">
             <div style="font-size:1.4rem; font-weight:700; color:var(--green);">{{ plan.buys }}</div>
             <div style="font-size:0.7rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">Buy</div>
@@ -25,9 +25,12 @@
             <div style="font-size:1.4rem; font-weight:700; color:var(--yellow);">{{ plan.reduces }}</div>
             <div style="font-size:0.7rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">Reduce</div>
         </div>
+        {% endif %}
+        <button id="run-now-btn" class="btn" onclick="triggerPlan()" style="white-space:nowrap;">Run Now</button>
     </div>
-    {% endif %}
 </div>
+
+<div id="trigger-status" style="display:none; margin-bottom:1rem;"></div>
 
 <div class="plan-disclaimer">
     <span class="plan-disclaimer-icon">&#9432;</span>
@@ -138,4 +141,74 @@
     </div>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function triggerPlan() {
+    var btn = document.getElementById('run-now-btn');
+    var statusEl = document.getElementById('trigger-status');
+    btn.disabled = true;
+    btn.textContent = 'Starting…';
+    statusEl.style.display = 'none';
+
+    fetch("{% url 'plan_trigger' %}", {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    })
+    .then(r => r.json())
+    .then(data => {
+        statusEl.style.display = 'block';
+        statusEl.className = data.status === 'started' ? 'plan-status-info' : 'plan-status-warn';
+        statusEl.textContent = data.message;
+        if (data.status === 'started') {
+            btn.textContent = 'Running…';
+            pollForPlan();
+        } else {
+            btn.disabled = false;
+            btn.textContent = 'Run Now';
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.textContent = 'Run Now';
+        statusEl.style.display = 'block';
+        statusEl.className = 'plan-status-warn';
+        statusEl.textContent = 'Request failed. Please try again.';
+    });
+}
+
+function pollForPlan() {
+    var btn = document.getElementById('run-now-btn');
+    var statusEl = document.getElementById('trigger-status');
+    var start = Date.now();
+    var interval = setInterval(function() {
+        fetch(window.location.href, {headers: {'X-Requested-With': 'check-plan'}})
+            .then(r => r.text())
+            .then(html => {
+                var elapsed = Math.round((Date.now() - start) / 1000);
+                statusEl.textContent = 'Scanning full universe… (' + elapsed + 's elapsed — this takes several minutes)';
+            });
+        if (Date.now() - start > 900000) { // 15 min max
+            clearInterval(interval);
+            btn.disabled = false;
+            btn.textContent = 'Run Now';
+        }
+    }, 15000);
+
+    // Auto-refresh the page every 60s to pick up new plan data
+    var pageRefresh = setInterval(function() {
+        if (document.getElementById('run-now-btn').disabled) {
+            window.location.reload();
+        } else {
+            clearInterval(pageRefresh);
+        }
+    }, 60000);
+}
+
+function getCookie(name) {
+    var v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+    return v ? v[2] : null;
+}
+</script>
 {% endblock %}

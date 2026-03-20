@@ -16,4 +16,5 @@ urlpatterns = [
     path("api/unread-count/", views.api_unread_count, name="api_unread_count"),
     path("api/allocation-preview/", views.allocation_preview_api, name="allocation_preview"),
     path("plan/", views.plan_view, name="plan"),
+    path("plan/trigger/", views.plan_trigger_view, name="plan_trigger"),
 ]

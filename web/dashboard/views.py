@@ -385,6 +385,34 @@ def allocation_preview_api(request: HttpRequest) -> JsonResponse:
     return JsonResponse(table)
 
 
+_plan_running = False
+
+
+@login_required
+@require_http_methods(["POST"])
+def plan_trigger_view(request: HttpRequest) -> JsonResponse:
+    global _plan_running
+    if _plan_running:
+        return JsonResponse({"status": "already_running",
+                             "message": "A plan is already being generated. Check back in a few minutes."})
+
+    import threading
+
+    def _run():
+        global _plan_running
+        try:
+            from monaimetrics.scheduler import run_planning_job
+            run_planning_job()
+        finally:
+            _plan_running = False
+
+    _plan_running = True
+    threading.Thread(target=_run, daemon=True).start()
+    return JsonResponse({"status": "started",
+                         "message": "Plan generation started — scanning the full universe. "
+                                    "This takes several minutes. Refresh the page to see results."})
+
+
 @login_required
 def plan_view(request: HttpRequest) -> HttpResponse:
     plan = _trade_journal.load_latest_plan()
