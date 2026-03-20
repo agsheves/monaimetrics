@@ -1,12 +1,11 @@
 [project]
 name = "repl-nix-workspace"
 version = "0.1.0"
-description = "Monaimetrics is an opinionated, automated trading platform that applies a series of tried and tested investment rules to build and manage a growth focused portfolio. Options to incorporate prediction market arb trading stategies are included."
+description = "Monaimetrics is an opinionated, automated trading platform that applies a series of tried and tested investment rules to build and manage a growth-focused portfolio."
 requires-python = ">=3.12"
 dependencies = [
     "alpaca-py>=0.43.2",
     "apscheduler>=3.11.2",
-    "cryptography>=46.0.5",
     "django>=6.0.2",
     "groq>=1.0.0",
     "gunicorn>=25.1.0",

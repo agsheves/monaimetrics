@@ -1,5 +1,8 @@
 .env
 *.pem
+runtime_settings.json
+cache/
+data/
 __pycache__/
 *.pyc
 .pytest_cache/
