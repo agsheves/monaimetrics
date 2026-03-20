@@ -386,6 +386,31 @@ class PortfolioManager:
                 qty=0, status="rejected", message="Zero position size",
             )
 
+        # Enforce runtime position limits (min/max USD per trade)
+        from monaimetrics import runtime_settings
+        rt = runtime_settings.load()
+        clamped_size = min(signal.position_size_usd, rt.max_position_usd)
+        if clamped_size < rt.min_position_usd:
+            return OrderResult(
+                order_id="", symbol=signal.symbol, side="buy",
+                qty=0, status="rejected",
+                message=f"Position ${signal.position_size_usd:.0f} below minimum ${rt.min_position_usd:.0f}",
+            )
+
+        # Also check buying power
+        try:
+            account = get_account(self.clients)
+            if clamped_size > account.buying_power:
+                clamped_size = account.buying_power
+                if clamped_size < rt.min_position_usd:
+                    return OrderResult(
+                        order_id="", symbol=signal.symbol, side="buy",
+                        qty=0, status="rejected",
+                        message=f"Insufficient buying power (${account.buying_power:.2f})",
+                    )
+        except Exception:
+            pass
+
         price = get_latest_price(signal.symbol, self.clients)
         if price <= 0:
             return OrderResult(
@@ -393,7 +418,7 @@ class PortfolioManager:
                 qty=0, status="rejected", message="Could not get price",
             )
 
-        qty = floor(signal.position_size_usd / price)
+        qty = floor(clamped_size / price)
         if qty < 1:
             return OrderResult(
                 order_id="", symbol=signal.symbol, side="buy",

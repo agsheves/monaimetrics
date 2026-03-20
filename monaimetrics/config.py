@@ -325,8 +325,8 @@ FRAMEWORK_WEIGHTS: dict[Tier, FrameworkWeights] = {
 class APIConfig:
     alpaca_api_key: str = ""
     alpaca_secret_key: str = ""
-    alpaca_paper: bool = False
-    alpaca_base_url: str = "https://api.alpaca.markets/v2"
+    alpaca_paper: bool = True
+    alpaca_base_url: str = "https://paper-api.alpaca.markets/v2"
     financial_datasets_api_key: str = ""
     sentiment_api_url: str = ""
     sentiment_api_key: str = ""
@@ -336,13 +336,36 @@ class APIConfig:
 
 
 def _load_api_config() -> APIConfig:
+    use_paper = os.environ.get("ALPACA_PAPER", "true").lower() != "false"
+
+    if use_paper:
+        api_key = (os.environ.get("ALPACA_API_KEY_PAPER", "")
+                   or os.environ.get("ALPACA_PAPER_API_KEY", "")
+                   or os.environ.get("ALPACA_API_KEY", ""))
+        secret_key = (os.environ.get("ALPACA_SECRET_KEY_PAPER", "")
+                      or os.environ.get("ALPACA_PAPER_SECRET_KEY", "")
+                      or os.environ.get("ALPACA_SECRET_KEY", ""))
+        default_url = (os.environ.get("ALPACA_BASE_URL_PAPER", "")
+                       or "https://paper-api.alpaca.markets/v2")
+    else:
+        api_key = os.environ.get("ALPACA_API_KEY", "")
+        secret_key = os.environ.get("ALPACA_SECRET_KEY", "")
+        default_url = "https://api.alpaca.markets/v2"
+
+    # Only use ALPACA_BASE_URL override when it matches the selected mode.
+    # This prevents a live base URL in .env from overriding paper mode.
+    base_url = default_url
+    env_base = os.environ.get("ALPACA_BASE_URL", "")
+    if env_base:
+        is_paper_url = "paper" in env_base.lower()
+        if use_paper == is_paper_url:
+            base_url = env_base
+
     return APIConfig(
-        alpaca_api_key=os.environ.get("ALPACA_API_KEY", ""),
-        alpaca_secret_key=os.environ.get("ALPACA_SECRET_KEY", ""),
-        alpaca_paper=os.environ.get("ALPACA_PAPER", "false").lower() == "true",
-        alpaca_base_url=os.environ.get(
-            "ALPACA_BASE_URL", "https://api.alpaca.markets/v2"
-        ),
+        alpaca_api_key=api_key,
+        alpaca_secret_key=secret_key,
+        alpaca_paper=use_paper,
+        alpaca_base_url=base_url,
         financial_datasets_api_key=os.environ.get("FINANCIAL_DATASETS_API_KEY", ""),
         sentiment_api_url=os.environ.get("SENTIMENT_API_URL", ""),
         sentiment_api_key=os.environ.get("SENTIMENT_API_KEY", ""),
