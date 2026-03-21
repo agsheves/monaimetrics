@@ -17,7 +17,7 @@ ALLOWED_HOSTS = ["*"]
 
 CSRF_TRUSTED_ORIGINS = [
     f"https://{d}" for d in os.environ.get("REPLIT_DOMAINS", "").split(",") if d
-]
+] + ["http://localhost:5000", "http://127.0.0.1:5000"]
 
 INSTALLED_APPS = [
     "django.contrib.contenttypes",

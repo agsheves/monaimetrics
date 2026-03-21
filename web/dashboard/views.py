@@ -5,6 +5,7 @@ import functools
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render, redirect
 from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
 
 from monaimetrics.web_portfolio import get_portfolio_data, get_symbol_data, get_allocation_for_profile, scan_for_opportunities
 from monaimetrics.web_research import ask_research
@@ -388,9 +389,12 @@ def allocation_preview_api(request: HttpRequest) -> JsonResponse:
 _plan_running = False
 
 
-@login_required
+@csrf_exempt
 @require_http_methods(["POST"])
 def plan_trigger_view(request: HttpRequest) -> JsonResponse:
+    remote = request.META.get("REMOTE_ADDR", "")
+    if remote not in ("127.0.0.1", "::1") and not request.session.get("authenticated"):
+        return JsonResponse({"status": "unauthorized"}, status=403)
     global _plan_running
     if _plan_running:
         return JsonResponse({"status": "already_running",
