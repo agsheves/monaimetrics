@@ -1,0 +1,99 @@
+{
+ "overview": {
+  "Symbol": "PURR",
+  "AssetType": "Common Stock",
+  "Name": "Hyperliquid Strategies Inc Common Stock",
+  "Description": "Hyperliquid Strategies Inc., through its subsidiary, is a a biotechnology company that owns a platform for biologic medicines of single or bifunctional action. The company is headquartered in New York, New York.",
+  "CIK": "None",
+  "Exchange": "NASDAQ",
+  "Currency": "USD",
+  "Country": "USA",
+  "Sector": "FINANCIAL SERVICES",
+  "Industry": "CAPITAL MARKETS",
+  "Address": "477 MADISON AVENUE, NEW YORK, NY, UNITED STATES, 10022",
+  "OfficialSite": "None",
+  "FiscalYearEnd": "None",
+  "LatestQuarter": "0000-00-00",
+  "MarketCapitalization": "548750000",
+  "EBITDA": "None",
+  "PERatio": "None",
+  "PEGRatio": "None",
+  "BookValue": "4.753",
+  "DividendPerShare": "None",
+  "DividendYield": "None",
+  "EPS": "None",
+  "RevenuePerShareTTM": "0",
+  "ProfitMargin": "0",
+  "OperatingMarginTTM": "0",
+  "ReturnOnAssetsTTM": "0",
+  "ReturnOnEquityTTM": "0",
+  "RevenueTTM": "0",
+  "GrossProfitTTM": "0",
+  "DilutedEPSTTM": "0",
+  "QuarterlyEarningsGrowthYOY": "0",
+  "QuarterlyRevenueGrowthYOY": "0",
+  "AnalystTargetPrice": "7.22",
+  "AnalystRatingStrongBuy": "0",
+  "AnalystRatingBuy": "2",
+  "AnalystRatingHold": "0",
+  "AnalystRatingSell": "0",
+  "AnalystRatingStrongSell": "0",
+  "TrailingPE": "-",
+  "ForwardPE": "-",
+  "PriceToSalesRatioTTM": "-",
+  "PriceToBookRatio": "-",
+  "EVToRevenue": "-",
+  "EVToEBITDA": "-",
+  "Beta": "None",
+  "52WeekHigh": "6.63",
+  "52WeekLow": "3.01",
+  "50DayMovingAverage": "3.848",
+  "200DayMovingAverage": "3.848",
+  "SharesOutstanding": "127026000",
+  "SharesFloat": "0",
+  "PercentInsiders": "0.000",
+  "PercentInstitutions": "0.000",
+  "DividendDate": "None",
+  "ExDividendDate": "None"
+ },
+ "income_statement": {
+  "symbol": "PURR",
+  "annualReports": [],
+  "quarterlyReports": []
+ },
+ "balance_sheet": {
+  "symbol": "PURR",
+  "annualReports": [],
+  "quarterlyReports": []
+ },
+ "earnings": {
+  "symbol": "PURR",
+  "annualEarnings": [
+   {
+    "fiscalDateEnding": "2025-12-31",
+    "reportedEPS": "-9.42"
+   }
+  ],
+  "quarterlyEarnings": [
+   {
+    "fiscalDateEnding": "2025-12-31",
+    "reportedDate": "2026-02-11",
+    "reportedEPS": "-6.56",
+    "estimatedEPS": "-4.12",
+    "surprise": "-2.44",
+    "surprisePercentage": "-59.2233",
+    "reportTime": "post-market"
+   },
+   {
+    "fiscalDateEnding": "2025-09-30",
+    "reportedDate": "2025-12-03",
+    "reportedEPS": "-2.86",
+    "estimatedEPS": "None",
+    "surprise": "0",
+    "surprisePercentage": "None",
+    "reportTime": "pre-market"
+   }
+  ]
+ },
+ "fetched_at": "2026-03-20T23:20:57.830515+00:00"
+}
