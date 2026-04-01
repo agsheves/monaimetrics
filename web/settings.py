@@ -1,7 +1,15 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+from monaimetrics.user_config import load_user_config
+
 BASE_DIR = Path(__file__).resolve().parent
+
+# Load secrets first (.env), then non-secret settings (user_config.yaml).
+# Actual environment variables (e.g. Replit secrets) always win over both.
+load_dotenv(BASE_DIR.parent / ".env")
+load_user_config()
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-insecure-key-change-in-production")
 

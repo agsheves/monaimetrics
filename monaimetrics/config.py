@@ -9,6 +9,14 @@ from dataclasses import dataclass, field
 from enum import Enum
 import os
 
+from dotenv import load_dotenv
+from monaimetrics.user_config import load_user_config
+
+# Load .env secrets, then user_config.yaml settings.
+# Existing environment variables (Replit secrets, shell exports) take priority.
+load_dotenv()
+load_user_config()
+
 
 # ---------------------------------------------------------------------------
 # Enums

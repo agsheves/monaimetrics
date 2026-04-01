@@ -42,17 +42,26 @@ Monaimetrics is a Python trading dashboard that connects to Alpaca's trading API
 - `pytz` - Timezone support
 - `cryptography` - RSA-PSS signing for Kalshi API auth
 
-### Environment Variables / Secrets
-- `APP_USERNAME` - Login username (default: "admin")
-- `APP_PASSWORD` - Login password (secret)
-- `GROQ_API_KEY` - Groq API key for research panel (secret)
-- `ALPACA_API_KEY` - Alpaca API key
-- `ALPACA_SECRET_KEY` - Alpaca secret key
-- `KALSHI_API_KEY` - Kalshi API key (for arb trading)
-- `KALSHI_PRIVATE_KEY_PATH` - Kalshi RSA private key (file path OR inline PEM content starting with `-----BEGIN`)
-- `KALSHI_PRIVATE_KEY_PEM` - Alternative: inline PEM content for Kalshi key
-- `KALSHI_USE_DEMO` - Use Kalshi demo API (default: "true")
-- `ARB_DRY_RUN` - Dry run mode for arb trades (default: "true")
+### Configuration — Two-file system
+
+Config is split so secrets never end up in version control:
+
+**`.env`** — confidential credentials, never committed:
+- `APP_PASSWORD` - Login password
+- `GROQ_API_KEY` - Groq API key for research panel
+- `ALPACA_API_KEY` - Alpaca live trading API key
+- `ALPACA_SECRET_KEY` - Alpaca live trading secret key
+- `ALPACA_API_KEY_PAPER` - Alpaca paper trading API key
+- `ALPACA_SECRET_KEY_PAPER` - Alpaca paper trading secret key
+
+**`user_config.yaml`** — shareable non-secret settings (committed to git):
+- `ALPACA_PAPER` - `true` = paper trading, `false` = live (default: `true`)
+- `DRY_RUN` - `true` = no real orders submitted (default: `true`)
+- `MAX_POSITION_USD` - Hard dollar cap per position (default: `2.0`)
+- `SCAN_UNIVERSE_LIMIT` - Max symbols scanned per assessment (default: `200`)
+
+**Load order** (highest priority first): Replit secrets → `.env` → `user_config.yaml` → code defaults.
+Loader: `monaimetrics/user_config.py` — called from both `web/settings.py` and `monaimetrics/config.py`.
 
 ### Pages
 1. **Login** (`/login/`) - Simple username/password auth

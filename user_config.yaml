@@ -4,4 +4,6 @@ ALPACA_PAPER=true #toggle to FALSE to enable live trading
 
 MAX_POSITION_USD=2.0 # Max position size in USD
 
+DRY_RUN=true #toggle to FALSE to enable live trading
 
+SCAN_UNIVERSE_LIMIT=200  # Max number of stocks to scan
