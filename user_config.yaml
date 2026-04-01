@@ -1,0 +1,7 @@
+# Configure these settings to adapt Monaimetrics to suit your own personal trading style and to toggle from demo / aper trading to live.
+
+ALPACA_PAPER=true #toggle to FALSE to enable live trading
+
+MAX_POSITION_USD=2.0 # Max position size in USD
+
+
