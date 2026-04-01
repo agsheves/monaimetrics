@@ -41,6 +41,6 @@ APP_USERNAME = "admin"
 KALSHI_USE_DEMO = "false"
 
 [deployment]
-deploymentTarget = "autoscale"
-run = ["gunicorn", "--bind=0.0.0.0:5000", "--workers=2", "--reuse-port", "web.wsgi:application"]
+deploymentTarget = "vm"
+run = ["gunicorn", "--bind=0.0.0.0:5000", "--workers=1", "--reuse-port", "web.wsgi:application"]
 build = ["python", "manage.py", "collectstatic", "--noinput"]
