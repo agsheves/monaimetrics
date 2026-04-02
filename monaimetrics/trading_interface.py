@@ -225,7 +225,7 @@ def submit_bracket_buy(
     config: SystemConfig,
     target_price: float | None = None,
     clients: AlpacaClients | None = None,
-) -> tuple[OrderResult, str]:
+) -> tuple[OrderResult, str, bool]:
     """
     Submit a bracket buy order: a single market buy with an embedded stop-loss
     (and optional take-profit) attached.  This avoids Alpaca "potential wash
@@ -233,8 +233,17 @@ def submit_bracket_buy(
     same symbol.
 
     Returns:
-        (OrderResult, stop_order_id) — the buy result and the stop-leg order ID
-        (empty string if not yet available or in dry-run mode).
+        (OrderResult, stop_order_id, bracket_used)
+
+        *stop_order_id* — the stop-loss leg order ID, or "" if not yet
+            available (pending fill) or in dry-run mode.
+        *bracket_used* — True when the bracket was successfully submitted
+            (stop is broker-managed); False when we fell back to a plain
+            market buy (caller must place a separate stop).
+
+    The caller should only submit an independent stop order when
+    ``bracket_used is False``.  A successful bracket with no leg ID (e.g.
+    pending fill) still owns the stop atomically — no second stop needed.
     """
     if config.dry_run:
         log.info(
@@ -252,6 +261,7 @@ def submit_bracket_buy(
                 message="Dry run — no bracket order placed",
             ),
             "",
+            True,   # treat dry-run as "bracket used" — no separate stop needed
         )
 
     c = (clients or get_clients()).trading
@@ -275,25 +285,29 @@ def submit_bracket_buy(
             qty, symbol, result.status, result.order_id,
         )
 
-        # Extract the stop-loss leg order ID from the attached legs
+        # Extract the stop-loss leg order ID.
+        # Bracket orders have two sell legs: a stop-loss (order_type=stop)
+        # and optionally a take-profit (order_type=limit).  Identify the
+        # stop-loss leg by the presence of stop_price, not just by side.
         stop_order_id = ""
         if hasattr(order, "legs") and order.legs:
             for leg in order.legs:
-                if hasattr(leg, "side") and leg.side == OrderSide.SELL:
+                leg_stop = getattr(leg, "stop_price", None)
+                if leg_stop is not None:
                     stop_order_id = str(leg.id)
                     break
 
-        return result, stop_order_id
+        return result, stop_order_id, True
 
     except APIError as e:
         log.error("Bracket buy failed for %s: %s — falling back to plain market order", symbol, e)
-        # Fallback: plain market buy (caller must place stop separately)
+        # Fallback: plain market buy; caller is responsible for placing a stop.
         result = submit_order(
             OrderRequest(symbol=symbol, side="buy", qty=qty),
             config=config,
             clients=clients,
         )
-        return result, ""
+        return result, "", False
 
 
 # ---------------------------------------------------------------------------

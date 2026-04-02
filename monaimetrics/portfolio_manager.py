@@ -269,7 +269,7 @@ class PortfolioManager:
         # Submit as a bracket order (buy + embedded stop-loss in one request).
         # Falls back to plain buy + separate stop if the bracket is rejected.
         target = signal.target_price if signal.target_price > 0 else None
-        result, stop_order_id = submit_bracket_buy(
+        result, stop_order_id, bracket_used = submit_bracket_buy(
             signal.symbol, qty, signal.stop_price,
             config=self.config,
             target_price=target,
@@ -292,22 +292,26 @@ class PortfolioManager:
             )
             self.managed_positions.append(pos)
 
-            # Track the stop-leg order ID (from the bracket, or place separately
-            # if the bracket fell back to a plain buy).
             if stop_order_id:
+                # Got the stop-loss leg ID from the bracket — track it for
+                # later cancel/update (e.g. breakeven lock).
                 self.stop_order_ids[signal.symbol] = stop_order_id
-            elif result.status != "dry_run":
-                # Bracket fell back to a plain buy — place stop separately
+            elif not bracket_used:
+                # Bracket was rejected and we fell back to a plain market buy;
+                # place a separate stop-loss now.
                 stop_result = place_stop_order(
                     signal.symbol, qty, signal.stop_price,
                     self.config, clients=self.clients,
                 )
                 if stop_result.order_id:
                     self.stop_order_ids[signal.symbol] = stop_result.order_id
+            # else: bracket accepted but no leg ID yet (pending fill) — the
+            # stop is broker-managed; do NOT create a second stop order.
 
             log.info(
-                "BUY %s %d shares @ %.2f (%s tier, stop=%.2f)",
-                signal.symbol, qty, entry, signal.tier.value, signal.stop_price,
+                "BUY %s %d shares @ %.2f (%s tier, stop=%.2f, bracket=%s)",
+                signal.symbol, qty, entry, signal.tier.value,
+                signal.stop_price, bracket_used,
             )
 
         return result
