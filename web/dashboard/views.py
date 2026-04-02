@@ -1,6 +1,7 @@
 import os
 import json
 import functools
+import logging
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render, redirect
@@ -10,6 +11,8 @@ from monaimetrics.web_portfolio import get_portfolio_data, get_symbol_data, get_
 from monaimetrics.web_research import ask_research
 from monaimetrics.web_arb import get_arb_dashboard_data
 from monaimetrics.user_config import update_user_config
+
+log = logging.getLogger(__name__)
 
 
 def login_required(view_func):
@@ -69,8 +72,8 @@ def settings_view(request: HttpRequest) -> HttpResponse:
             # Persist to user_config.yaml so the scheduler picks it up too
             try:
                 update_user_config("RISK_PROFILE", profile)
-            except Exception:
-                pass  # Non-fatal — session value still updated
+            except Exception as e:
+                log.warning("Could not persist RISK_PROFILE to user_config.yaml: %s", e)
 
     profile = request.session.get("risk_profile", "moderate")
     allocation_table = get_allocation_for_profile(profile)

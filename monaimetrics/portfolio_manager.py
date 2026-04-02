@@ -289,6 +289,7 @@ class PortfolioManager:
                 trailing_stop=signal.stop_price if signal.tier == Tier.HIGH else 0.0,
                 highest_price=entry,
                 current_price=entry,
+                bracket_position=bracket_used,
             )
             self.managed_positions.append(pos)
 
@@ -528,8 +529,31 @@ class PortfolioManager:
                 new_floor = round(pos.entry_price + 0.01, 2)
                 if new_floor > pos.stop_price:
                     old_id = self.stop_order_ids.get(pos.symbol, "")
+
+                    # When a bracket position has no tracked stop ID yet (e.g.
+                    # the bracket was still pending fill when the ID was not
+                    # returned), scan open orders now to find and cancel the
+                    # broker-side stop before we place the new floor.
+                    if not old_id and pos.bracket_position and not self.config.dry_run:
+                        try:
+                            for open_ord in get_open_orders(self.clients):
+                                if (
+                                    open_ord.symbol == pos.symbol
+                                    and open_ord.side == "sell"
+                                    and open_ord.order_id
+                                ):
+                                    old_id = open_ord.order_id
+                                    break
+                        except Exception as e:
+                            log.warning(
+                                "Breakeven lock: could not query open orders for %s: %s",
+                                pos.symbol, e,
+                            )
+
                     if old_id and not self.config.dry_run:
                         cancel_order(old_id, self.config, self.clients)
+                        self.stop_order_ids.pop(pos.symbol, None)
+
                     stop_result = place_stop_order(
                         pos.symbol, pos.qty, new_floor,
                         self.config, clients=self.clients,

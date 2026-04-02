@@ -37,7 +37,8 @@ class ManagedPosition:
     current_price: float
     weeks_held: int = 0
     frameworks_at_entry: dict[str, float] = field(default_factory=dict)
-    breakeven_locked: bool = False  # True once stop is floored at entry + $0.01
+    breakeven_locked: bool = False   # True once stop is floored at entry + $0.01
+    bracket_position: bool = False   # True when bought via bracket order (stop is broker-managed)
 
 
 @dataclass

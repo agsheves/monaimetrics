@@ -170,8 +170,8 @@ class KellyConfig:
 
 @dataclass
 class ModerateTierConfig:
-    profit_target: float = 0.25
-    stop_loss: float = 0.08
+    profit_target: float = 0.15  # overridable via PROFIT_TARGET env / user_config.yaml
+    stop_loss: float = 0.06      # overridable via STOP_LOSS env / user_config.yaml
     vol_adjustment_factor: float = 0.5
     non_perf_review_weeks: int = 4
     non_perf_gain_threshold: float = 0.05
