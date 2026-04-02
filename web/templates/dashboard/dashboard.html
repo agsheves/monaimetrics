@@ -50,6 +50,7 @@
 <div class="card">
     <div class="card-title">Positions ({{ data.positions|length }})</div>
     {% if data.positions %}
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -80,6 +81,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <p style="color: var(--text-muted); padding: 1rem 0;">No open positions.</p>
     {% endif %}
