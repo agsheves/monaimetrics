@@ -271,9 +271,6 @@ def plan_trades(pm: PortfolioManager, reporter: Reporter):
 # ---------------------------------------------------------------------------
 
 def main():
-    from dotenv import load_dotenv
-    load_dotenv()
-
     print("\n  Connecting to Alpaca...")
     config = load_config()
     clients = AlpacaClients(config.api)

@@ -42,26 +42,25 @@ Monaimetrics is a Python trading dashboard that connects to Alpaca's trading API
 - `pytz` - Timezone support
 - `cryptography` - RSA-PSS signing for Kalshi API auth
 
-### Configuration — Two-file system
+### Configuration — Two-source system
 
-Config is split so secrets never end up in version control:
-
-**`.env`** — confidential credentials, never committed:
+**Replit app secrets** — confidential credentials (set in Replit sidebar, never in code):
 - `APP_PASSWORD` - Login password
+- `APP_USERNAME` - Login username
 - `GROQ_API_KEY` - Groq API key for research panel
-- `ALPACA_API_KEY` - Alpaca live trading API key
-- `ALPACA_SECRET_KEY` - Alpaca live trading secret key
-- `ALPACA_API_KEY_PAPER` - Alpaca paper trading API key
-- `ALPACA_SECRET_KEY_PAPER` - Alpaca paper trading secret key
+- `ALPACA_API_KEY` - Alpaca API key (live or paper, matching the account you use)
+- `ALPACA_SECRET_KEY` - Alpaca API secret key
 
 **`user_config.yaml`** — shareable non-secret settings (committed to git):
-- `ALPACA_PAPER` - `true` = paper trading, `false` = live (default: `true`)
-- `DRY_RUN` - `true` = no real orders submitted (default: `true`)
+- `ALPACA_PAPER` - `true` = paper trading endpoint, `false` = live (default: `false`)
+- `DRY_RUN` - `true` = no real orders submitted (default: `false`)
 - `MAX_POSITION_USD` - Hard dollar cap per position (default: `2.0`)
+- `CASH_RESERVE_PCT` - Fraction of cash kept undeployed (default: `0.20`)
 - `SCAN_UNIVERSE_LIMIT` - Max symbols scanned per assessment (default: `200`)
 
-**Load order** (highest priority first): Replit secrets → `.env` → `user_config.yaml` → code defaults.
+**Load order** (highest priority first): Replit secrets (already in os.environ) → `user_config.yaml` → code defaults.
 Loader: `monaimetrics/user_config.py` — called from both `web/settings.py` and `monaimetrics/config.py`.
+No `.env` file is used; all secrets live in Replit app secrets only.
 
 ### Pages
 1. **Login** (`/login/`) - Simple username/password auth

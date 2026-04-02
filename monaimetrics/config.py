@@ -9,12 +9,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 import os
 
-from dotenv import load_dotenv
 from monaimetrics.user_config import load_user_config
 
-# Load .env secrets, then user_config.yaml settings.
-# Existing environment variables (Replit secrets, shell exports) take priority.
-load_dotenv()
+# API keys come from Replit app secrets (already in os.environ).
+# Non-secret settings (trading mode, position sizing, etc.) come from user_config.yaml.
 load_user_config()
 
 
