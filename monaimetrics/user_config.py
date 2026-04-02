@@ -5,15 +5,15 @@ The file uses KEY=VALUE format with # comments, for example:
 
     ALPACA_PAPER=true   # use paper trading
     DRY_RUN=true        # no live orders
-    MAX_POSITION_USD=2.0
+    MAX_SHARE_PRICE_USD=25.0
 
-Values are applied with lower priority than actual environment variables and
-.env secrets, so the load order is:
+Values are applied with lower priority than actual environment variables, so
+the load order is:
 
-    Replit secrets  >  .env  >  user_config.yaml  >  code defaults
+    Replit secrets  >  user_config.yaml  >  code defaults
 
-This means confidential values (API keys, passwords) stay in .env and are
-never accidentally committed, while shareable settings live in user_config.yaml.
+Confidential values (API keys, passwords) live in Replit app secrets and are
+never in this file. Only shareable non-secret settings belong here.
 """
 
 from __future__ import annotations

@@ -61,17 +61,15 @@ def _check_position_size(
     price: float,
     config: SystemConfig,
 ) -> str | None:
-    """Returns error message if order exceeds max position cap, else None."""
+    """Returns error message if the stock's price per share exceeds the cap, else None."""
     if request.side != "buy":
         return None
 
-    order_value = request.qty * price
-
-    # Hard dollar cap — overrides all other sizing logic
-    if order_value > config.max_position_usd:
+    # Share price cap — skip stocks that cost more per share than the limit
+    if price > config.max_share_price_usd:
         return (
-            f"Order value ${order_value:,.2f} exceeds hard position limit "
-            f"${config.max_position_usd:,.2f}"
+            f"Share price ${price:,.2f} exceeds per-share limit "
+            f"${config.max_share_price_usd:,.2f}"
         )
 
     return None

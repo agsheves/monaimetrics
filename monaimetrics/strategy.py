@@ -441,6 +441,20 @@ def evaluate_opportunity(
     """
     reasons = []
 
+    # Gate 0: Share price cap — skip stocks above the per-share limit
+    if config.max_share_price_usd > 0 and tech.price > config.max_share_price_usd:
+        return Signal(
+            symbol=symbol,
+            action=SignalType.WATCH,
+            urgency=SignalUrgency.MONITOR,
+            tier=tier,
+            confidence=0,
+            reasons=[
+                f"Share price ${tech.price:.2f} exceeds cap of "
+                f"${config.max_share_price_usd:.2f} — skipping"
+            ],
+        )
+
     # Gate 1: Stage must be 2 (advancing)
     stage = assess_stage(tech)
     if stage != Stage.ADVANCING.value:

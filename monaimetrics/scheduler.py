@@ -22,7 +22,7 @@ Environment variables:
   STOP_CHECK_INTERVAL_MINUTES  Stop-loss check frequency (default: 15)
   SCAN_UNIVERSE_LIMIT          Max symbols per assessment cycle (default: 150)
   DRY_RUN                      "true" to observe only (default: "true")
-  MAX_POSITION_USD             Hard dollar cap per order (default: 2.0)
+  MAX_SHARE_PRICE_USD          Skip stocks above this price per share (default: 25.0)
 """
 
 from __future__ import annotations

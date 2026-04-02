@@ -394,7 +394,7 @@ class SystemConfig:
     api: APIConfig
     alpha_signals: AlphaSignalsConfig = field(default_factory=AlphaSignalsConfig)
     dry_run: bool = True
-    max_position_usd: float = 2.0
+    max_share_price_usd: float = 25.0  # skip stocks above this price per share
     cash_reserve_pct: float = 0.20  # fraction of cash to keep undeployed
 
     def get_allocation(self, cycle_score: int) -> TierAllocation:
@@ -466,6 +466,6 @@ def load_config(
         api=_load_api_config(),
         alpha_signals=AlphaSignalsConfig(),
         dry_run=os.environ.get("DRY_RUN", "true").lower() == "true",
-        max_position_usd=float(os.environ.get("MAX_POSITION_USD", "2.0")),
+        max_share_price_usd=float(os.environ.get("MAX_SHARE_PRICE_USD", "25.0")),
         cash_reserve_pct=float(os.environ.get("CASH_RESERVE_PCT", "0.20")),
     )
