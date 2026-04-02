@@ -3,8 +3,8 @@
 # Secrets (API keys, passwords) stay in .env — only non-confidential settings live here.
 
 # --- Trading mode ---
-ALPACA_PAPER=true   # Set to false to use live Alpaca account
-DRY_RUN=true        # Set to false to submit real orders
+ALPACA_PAPER=false   # Set to false to use live Alpaca account
+DRY_RUN=false        # Set to false to submit real orders
 
 # --- Position sizing ---
 MAX_POSITION_USD=2.0    # Hard cap per trade in USD
