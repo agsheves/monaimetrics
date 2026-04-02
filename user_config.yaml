@@ -7,7 +7,7 @@ ALPACA_PAPER=false   # Set to false to use live Alpaca account
 DRY_RUN=false        # Set to false to submit real orders
 
 # --- Position sizing ---
-MAX_POSITION_USD=2.0    # Hard cap per trade in USD
+MAX_POSITION_USD=25.0    # Hard cap per trade in USD
 CASH_RESERVE_PCT=0.20   # Fraction of cash to keep undeployed (0.20 = keep 20% as reserve)
 
 # --- Universe ---
