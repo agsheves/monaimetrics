@@ -15,8 +15,10 @@ from alpaca.trading.requests import (
     LimitOrderRequest,
     StopOrderRequest,
     StopLimitOrderRequest,
+    TakeProfitRequest,
+    StopLossRequest,
 )
-from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus
+from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus, OrderClass
 from alpaca.common.exceptions import APIError
 
 from monaimetrics.config import SystemConfig
@@ -210,6 +212,88 @@ def submit_order(
             status="rejected",
             message=str(e),
         )
+
+
+# ---------------------------------------------------------------------------
+# Bracket Orders (buy + stop-loss in one atomic request)
+# ---------------------------------------------------------------------------
+
+def submit_bracket_buy(
+    symbol: str,
+    qty: float,
+    stop_price: float,
+    config: SystemConfig,
+    target_price: float | None = None,
+    clients: AlpacaClients | None = None,
+) -> tuple[OrderResult, str]:
+    """
+    Submit a bracket buy order: a single market buy with an embedded stop-loss
+    (and optional take-profit) attached.  This avoids Alpaca "potential wash
+    trade" rejections that occur when a separate stop order is open for the
+    same symbol.
+
+    Returns:
+        (OrderResult, stop_order_id) — the buy result and the stop-leg order ID
+        (empty string if not yet available or in dry-run mode).
+    """
+    if config.dry_run:
+        log.info(
+            "DRY RUN: BRACKET BUY %s %s shares, stop=%.2f%s",
+            qty, symbol, stop_price,
+            f", target={target_price:.2f}" if target_price else "",
+        )
+        return (
+            OrderResult(
+                order_id="dry_run",
+                symbol=symbol,
+                side="buy",
+                qty=qty,
+                status="dry_run",
+                message="Dry run — no bracket order placed",
+            ),
+            "",
+        )
+
+    c = (clients or get_clients()).trading
+    try:
+        stop_req = StopLossRequest(stop_price=round(stop_price, 2))
+        kwargs: dict = dict(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.BUY,
+            time_in_force=TimeInForce.DAY,
+            order_class=OrderClass.BRACKET,
+            stop_loss=stop_req,
+        )
+        if target_price and target_price > 0:
+            kwargs["take_profit"] = TakeProfitRequest(limit_price=round(target_price, 2))
+
+        order = c.submit_order(MarketOrderRequest(**kwargs))
+        result = _result_from_alpaca(order)
+        log.info(
+            "BRACKET BUY: %s %s shares — %s (id=%s)",
+            qty, symbol, result.status, result.order_id,
+        )
+
+        # Extract the stop-loss leg order ID from the attached legs
+        stop_order_id = ""
+        if hasattr(order, "legs") and order.legs:
+            for leg in order.legs:
+                if hasattr(leg, "side") and leg.side == OrderSide.SELL:
+                    stop_order_id = str(leg.id)
+                    break
+
+        return result, stop_order_id
+
+    except APIError as e:
+        log.error("Bracket buy failed for %s: %s — falling back to plain market order", symbol, e)
+        # Fallback: plain market buy (caller must place stop separately)
+        result = submit_order(
+            OrderRequest(symbol=symbol, side="buy", qty=qty),
+            config=config,
+            clients=clients,
+        )
+        return result, ""
 
 
 # ---------------------------------------------------------------------------

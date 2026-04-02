@@ -24,8 +24,8 @@ from monaimetrics.strategy import (
 )
 from monaimetrics.trading_interface import (
     OrderRequest, OrderResult,
-    submit_order, place_stop_order, cancel_order, get_open_orders,
-    cancel_all_orders,
+    submit_order, submit_bracket_buy, place_stop_order, cancel_order,
+    get_open_orders, cancel_all_orders,
 )
 from monaimetrics import calculators
 from monaimetrics.alpha_signals import (
@@ -260,9 +260,20 @@ class PortfolioManager:
                 qty=0, status="rejected", message="Size below 1 share",
             )
 
-        result = submit_order(
-            OrderRequest(symbol=signal.symbol, side="buy", qty=qty),
-            self.config, self.clients,
+        # Cancel any existing stop order for this symbol before buying to avoid
+        # "potential wash trade" rejections from Alpaca.
+        old_stop_id = self.stop_order_ids.pop(signal.symbol, "")
+        if old_stop_id and not self.config.dry_run:
+            cancel_order(old_stop_id, self.config, self.clients)
+
+        # Submit as a bracket order (buy + embedded stop-loss in one request).
+        # Falls back to plain buy + separate stop if the bracket is rejected.
+        target = signal.target_price if signal.target_price > 0 else None
+        result, stop_order_id = submit_bracket_buy(
+            signal.symbol, qty, signal.stop_price,
+            config=self.config,
+            target_price=target,
+            clients=self.clients,
         )
 
         if result.status in ("accepted", "filled", "dry_run"):
@@ -281,13 +292,18 @@ class PortfolioManager:
             )
             self.managed_positions.append(pos)
 
-            # Place broker-side stop
-            stop_result = place_stop_order(
-                signal.symbol, qty, signal.stop_price,
-                self.config, clients=self.clients,
-            )
-            if stop_result.order_id:
-                self.stop_order_ids[signal.symbol] = stop_result.order_id
+            # Track the stop-leg order ID (from the bracket, or place separately
+            # if the bracket fell back to a plain buy).
+            if stop_order_id:
+                self.stop_order_ids[signal.symbol] = stop_order_id
+            elif result.status != "dry_run":
+                # Bracket fell back to a plain buy — place stop separately
+                stop_result = place_stop_order(
+                    signal.symbol, qty, signal.stop_price,
+                    self.config, clients=self.clients,
+                )
+                if stop_result.order_id:
+                    self.stop_order_ids[signal.symbol] = stop_result.order_id
 
             log.info(
                 "BUY %s %d shares @ %.2f (%s tier, stop=%.2f)",
@@ -495,7 +511,35 @@ class PortfolioManager:
         self.sync_positions()
         records = []
 
+        _BREAKEVEN_LOCK_GAIN = 0.03  # Lock stop at entry + $0.01 once up 3%
+
         for pos in list(self.managed_positions):
+            # Breakeven lock: once up 3%, floor the stop at entry + $0.01 so no
+            # trade can ever lose money after gaining that threshold.
+            if (
+                not pos.breakeven_locked
+                and pos.entry_price > 0
+                and pos.current_price >= pos.entry_price * (1 + _BREAKEVEN_LOCK_GAIN)
+            ):
+                new_floor = round(pos.entry_price + 0.01, 2)
+                if new_floor > pos.stop_price:
+                    old_id = self.stop_order_ids.get(pos.symbol, "")
+                    if old_id and not self.config.dry_run:
+                        cancel_order(old_id, self.config, self.clients)
+                    stop_result = place_stop_order(
+                        pos.symbol, pos.qty, new_floor,
+                        self.config, clients=self.clients,
+                    )
+                    if stop_result.order_id:
+                        self.stop_order_ids[pos.symbol] = stop_result.order_id
+                    pos.stop_price = new_floor
+                pos.breakeven_locked = True
+                log.info(
+                    "Breakeven lock: %s stop floored at %.2f (entry=%.2f, gain=%.1f%%)",
+                    pos.symbol, pos.stop_price, pos.entry_price,
+                    (pos.current_price - pos.entry_price) / pos.entry_price * 100,
+                )
+
             # Fixed stop
             if pos.current_price <= pos.stop_price:
                 signal = Signal(

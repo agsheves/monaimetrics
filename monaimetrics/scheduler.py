@@ -3,8 +3,8 @@ Strategic trading scheduler.
 
 Two jobs:
 
-  1. Assessment (twice daily, market hours)
-     Runs at 09:45 ET (after open volatility settles) and 14:00 ET.
+  1. Assessment (hourly, market hours)
+     Runs every hour on the :45 mark, from 09:45 through 15:45 ET, Mon–Fri.
      Fetches the live Alpaca universe of tradeable US equities, evaluates
      every symbol through the full strategy stack (stage analysis, Kelly
      sizing, cycle positioning, risk tier allocation), then executes any
@@ -23,6 +23,7 @@ Environment variables:
   SCAN_UNIVERSE_LIMIT          Max symbols per assessment cycle (default: 150)
   DRY_RUN                      "true" to observe only (default: "true")
   MAX_SHARE_PRICE_USD          Skip stocks above this price per share (default: 25.0)
+  RISK_PROFILE                 Risk profile for the scheduler (default: "moderate")
 """
 
 from __future__ import annotations
@@ -40,12 +41,6 @@ ET = pytz.timezone("America/New_York")
 STOP_CHECK_INTERVAL = int(os.environ.get("STOP_CHECK_INTERVAL_MINUTES", "15"))
 SCAN_UNIVERSE_LIMIT = int(os.environ.get("SCAN_UNIVERSE_LIMIT", "150"))
 
-# Twice-daily assessment times (ET)
-ASSESSMENT_TIMES = [
-    {"hour": 9,  "minute": 45},   # morning — after open volatility settles
-    {"hour": 14, "minute": 0},    # afternoon — mid-session review
-]
-
 
 def _is_market_open() -> bool:
     now = datetime.now(ET)
@@ -62,19 +57,19 @@ def run_assessment_job() -> None:
         log.debug("Scheduler: market closed, skipping assessment")
         return
 
-    from monaimetrics.config import load_config, RiskProfile
+    from monaimetrics.config import load_config_from_env
     from monaimetrics.data_input import AlpacaClients, get_tradeable_assets
     from monaimetrics.portfolio_manager import PortfolioManager
 
     try:
-        config = load_config(RiskProfile.MODERATE)
+        config = load_config_from_env()
         clients = AlpacaClients(config.api)
         mode = "DRY RUN" if config.dry_run else "LIVE"
 
         universe = get_tradeable_assets(clients, limit=SCAN_UNIVERSE_LIMIT)
         log.info(
-            "Scheduler [%s]: assessment starting — %d symbols in universe",
-            mode, len(universe),
+            "Scheduler [%s]: assessment starting — %d symbols in universe (profile=%s)",
+            mode, len(universe), config.profile.value,
         )
 
         pm = PortfolioManager(config, clients)
@@ -97,12 +92,12 @@ def run_stop_check_job() -> None:
     if not _is_market_open():
         return
 
-    from monaimetrics.config import load_config, RiskProfile
+    from monaimetrics.config import load_config_from_env
     from monaimetrics.data_input import AlpacaClients
     from monaimetrics.portfolio_manager import PortfolioManager
 
     try:
-        config = load_config(RiskProfile.MODERATE)
+        config = load_config_from_env()
         clients = AlpacaClients(config.api)
         pm = PortfolioManager(config, clients)
         records = pm.run_stop_check()
@@ -126,22 +121,21 @@ def start(run_assessment: bool = True, run_stops: bool = True) -> None:
     scheduler = BackgroundScheduler(timezone=ET)
 
     if run_assessment:
-        for i, t in enumerate(ASSESSMENT_TIMES):
-            scheduler.add_job(
-                run_assessment_job,
-                trigger=CronTrigger(
-                    day_of_week="mon-fri",
-                    hour=t["hour"],
-                    minute=t["minute"],
-                    timezone=ET,
-                ),
-                id=f"assessment_{i}",
-                name=f"Assessment at {t['hour']:02d}:{t['minute']:02d} ET",
-                replace_existing=True,
-                misfire_grace_time=300,
-            )
-        times_str = ", ".join(f"{t['hour']:02d}:{t['minute']:02d}" for t in ASSESSMENT_TIMES)
-        log.info("Scheduler: assessment registered at %s ET (Mon–Fri)", times_str)
+        # Hourly assessment: every hour at :45, from 09:45 through 15:45 ET (Mon–Fri)
+        scheduler.add_job(
+            run_assessment_job,
+            trigger=CronTrigger(
+                day_of_week="mon-fri",
+                hour="9-15",
+                minute=45,
+                timezone=ET,
+            ),
+            id="assessment_hourly",
+            name="Assessment (hourly :45 ET, 09:45–15:45)",
+            replace_existing=True,
+            misfire_grace_time=300,
+        )
+        log.info("Scheduler: hourly assessment registered at :45 ET (09:45–15:45, Mon–Fri)")
 
     if run_stops:
         scheduler.add_job(
@@ -156,6 +150,6 @@ def start(run_assessment: bool = True, run_stops: bool = True) -> None:
 
     scheduler.start()
     log.info(
-        "Scheduler: running — assessments 2×/day, stop checks every %dm, universe cap %d",
+        "Scheduler: running — hourly assessments (:45 ET, 09:45–15:45), stop checks every %dm, universe cap %d",
         STOP_CHECK_INTERVAL, SCAN_UNIVERSE_LIMIT,
     )

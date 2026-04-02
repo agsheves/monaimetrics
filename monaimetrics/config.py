@@ -448,6 +448,19 @@ def load_config(
 
     overrides = tier_defaults[profile]
 
+    # PROFIT_TARGET and STOP_LOSS env vars override the profile default for the moderate tier
+    mod_defaults = ModerateTierConfig()
+    env_profit_target = os.environ.get("PROFIT_TARGET")
+    env_stop_loss = os.environ.get("STOP_LOSS")
+    if env_profit_target is not None:
+        overrides["moderate"]["profit_target"] = float(env_profit_target)
+    elif "profit_target" not in overrides["moderate"]:
+        overrides["moderate"]["profit_target"] = mod_defaults.profit_target
+    if env_stop_loss is not None:
+        overrides["moderate"]["stop_loss"] = float(env_stop_loss)
+    elif "stop_loss" not in overrides["moderate"]:
+        overrides["moderate"]["stop_loss"] = mod_defaults.stop_loss
+
     return SystemConfig(
         profile=profile,
         cycle=CycleConfig(),
@@ -469,3 +482,16 @@ def load_config(
         max_share_price_usd=float(os.environ.get("MAX_SHARE_PRICE_USD", "25.0")),
         cash_reserve_pct=float(os.environ.get("CASH_RESERVE_PCT", "0.20")),
     )
+
+
+def load_config_from_env(default_profile: RiskProfile = RiskProfile.MODERATE) -> SystemConfig:
+    """
+    Like load_config() but reads the risk profile from the RISK_PROFILE environment
+    variable (set via user_config.yaml or Replit secrets) instead of requiring a
+    hard-coded enum value.  Falls back to *default_profile* if the env var is missing
+    or unrecognised.
+    """
+    profile_map = {e.value: e for e in RiskProfile}
+    profile_str = os.environ.get("RISK_PROFILE", default_profile.value).lower().strip()
+    profile = profile_map.get(profile_str, default_profile)
+    return load_config(profile)

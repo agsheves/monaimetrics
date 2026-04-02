@@ -9,6 +9,7 @@ from django.views.decorators.http import require_http_methods
 from monaimetrics.web_portfolio import get_portfolio_data, get_symbol_data, get_allocation_for_profile, scan_for_opportunities
 from monaimetrics.web_research import ask_research
 from monaimetrics.web_arb import get_arb_dashboard_data
+from monaimetrics.user_config import update_user_config
 
 
 def login_required(view_func):
@@ -65,6 +66,11 @@ def settings_view(request: HttpRequest) -> HttpResponse:
         profile = request.POST.get("risk_profile", "moderate")
         if profile in ("conservative", "moderate", "aggressive"):
             request.session["risk_profile"] = profile
+            # Persist to user_config.yaml so the scheduler picks it up too
+            try:
+                update_user_config("RISK_PROFILE", profile)
+            except Exception:
+                pass  # Non-fatal — session value still updated
 
     profile = request.session.get("risk_profile", "moderate")
     allocation_table = get_allocation_for_profile(profile)

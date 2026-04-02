@@ -12,3 +12,10 @@ CASH_RESERVE_PCT=0.20     # Fraction of cash to keep undeployed (0.20 = keep 20%
 
 # --- Universe ---
 SCAN_UNIVERSE_LIMIT=200  # Max number of stocks to scan per assessment cycle
+
+# --- Strategy (fast compounding) ---
+PROFIT_TARGET=0.15  # Profit target as a decimal (0.15 = 15%); overrides profile default for moderate tier
+STOP_LOSS=0.06      # Stop-loss as a decimal (0.06 = 6%); overrides profile default for moderate tier
+
+# --- Risk profile ---
+RISK_PROFILE=moderate  # Risk profile used by the automated scheduler: conservative, moderate, or aggressive

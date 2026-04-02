@@ -60,3 +60,42 @@ def load_user_config(path: str | Path | None = None) -> dict[str, str]:
                 os.environ[key] = value
 
     return loaded
+
+
+def update_user_config(key: str, value: str, path: str | Path | None = None) -> None:
+    """
+    Update (or insert) a KEY=VALUE line in user_config.yaml and apply the
+    new value to os.environ immediately.
+
+    Existing inline comments on the changed line are preserved.
+    If the key is not present, the new line is appended at the end.
+    """
+    config_path = Path(path) if path else _DEFAULT_PATH
+    os.environ[key] = value
+
+    if not config_path.exists():
+        with open(config_path, "a", encoding="utf-8") as fh:
+            fh.write(f"{key}={value}\n")
+        return
+
+    lines = config_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    found = False
+    new_lines = []
+    for raw_line in lines:
+        stripped = raw_line.split("#")[0].strip()
+        if "=" in stripped:
+            k, _, _ = stripped.partition("=")
+            if k.strip() == key:
+                comment_part = ""
+                if "#" in raw_line:
+                    comment_part = "  " + raw_line[raw_line.index("#"):]
+                new_lines.append(f"{key}={value}{comment_part}" if comment_part else f"{key}={value}\n")
+                found = True
+                continue
+        new_lines.append(raw_line)
+
+    if not found:
+        nl = "" if new_lines and new_lines[-1].endswith("\n") else "\n"
+        new_lines.append(f"{nl}{key}={value}\n")
+
+    config_path.write_text("".join(new_lines), encoding="utf-8")

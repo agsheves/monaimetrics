@@ -37,6 +37,7 @@ class ManagedPosition:
     current_price: float
     weeks_held: int = 0
     frameworks_at_entry: dict[str, float] = field(default_factory=dict)
+    breakeven_locked: bool = False  # True once stop is floored at entry + $0.01
 
 
 @dataclass
@@ -556,7 +557,7 @@ def evaluate_opportunity(
 
     position_size = calculators.kelly_position_size(
         win_prob=confidence / 100.0,
-        avg_win=0.25 if tier == Tier.MODERATE else 0.50,
+        avg_win=config.moderate_tier.profit_target if tier == Tier.MODERATE else 0.50,
         avg_loss=config.moderate_tier.stop_loss if tier == Tier.MODERATE else 0.12,
         fraction_multiplier=kelly_frac,
         available_capital=available_capital,

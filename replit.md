@@ -54,9 +54,12 @@ Monaimetrics is a Python trading dashboard that connects to Alpaca's trading API
 **`user_config.yaml`** — shareable non-secret settings (committed to git):
 - `ALPACA_PAPER` - `true` = paper trading endpoint, `false` = live (default: `false`)
 - `DRY_RUN` - `true` = no real orders submitted (default: `false`)
-- `MAX_POSITION_USD` - Hard dollar cap per position (default: `2.0`)
+- `MAX_SHARE_PRICE_USD` - Skip stocks above this price per share (default: `25.0`)
 - `CASH_RESERVE_PCT` - Fraction of cash kept undeployed (default: `0.20`)
 - `SCAN_UNIVERSE_LIMIT` - Max symbols scanned per assessment (default: `200`)
+- `PROFIT_TARGET` - Profit target for moderate tier as decimal (default: `0.15` = 15%)
+- `STOP_LOSS` - Stop-loss for moderate tier as decimal (default: `0.06` = 6%)
+- `RISK_PROFILE` - Risk profile for the scheduler: `conservative`, `moderate`, or `aggressive` (default: `moderate`); also written by the Settings page
 
 **Load order** (highest priority first): Replit secrets (already in os.environ) → `user_config.yaml` → code defaults.
 Loader: `monaimetrics/user_config.py` — called from both `web/settings.py` and `monaimetrics/config.py`.
@@ -74,16 +77,22 @@ No `.env` file is used; all secrets live in Replit app secrets only.
 ### Automatic Trading Scheduler
 - Boots via Django's `AppConfig.ready()` hook in `web/dashboard/apps.py`
 - Implemented in `monaimetrics/scheduler.py`
-- **Assessment job**: runs twice daily (09:45 ET and 14:00 ET, Mon–Fri). Fetches the live Alpaca universe of tradeable US equities (`SCAN_UNIVERSE_LIMIT`, default 150), evaluates every symbol through the full strategy stack (stage analysis, Kelly sizing, cycle positioning, risk tier allocation), executes buy/sell/reduce signals that meet the rules.
-- **Stop check job**: lightweight price-only scan of current positions every `STOP_CHECK_INTERVAL_MINUTES` (default: 15) during market hours — fires stop-loss and trailing-stop sells immediately without waiting for the next assessment.
+- **Assessment job**: runs **hourly at :45** from 09:45 through 15:45 ET (Mon–Fri). Fetches the live Alpaca universe of tradeable US equities (`SCAN_UNIVERSE_LIMIT`, default 200), evaluates every symbol through the full strategy stack (stage analysis, Kelly sizing, cycle positioning, risk tier allocation), executes buy/sell/reduce signals that meet the rules.
+- **Stop check job**: lightweight price-only scan of current positions every `STOP_CHECK_INTERVAL_MINUTES` (default: 15) during market hours — fires stop-loss and trailing-stop sells immediately without waiting for the next assessment. Also applies **breakeven lock**: once a position is up 3%, stop is floored at `entry + $0.01`.
 - Market hours: 09:30–16:00 ET, Monday–Friday only
+- Both jobs read `RISK_PROFILE` from env/user_config.yaml (no longer hardcoded to MODERATE)
 - Both jobs log activity and respect `DRY_RUN` — no orders are submitted in dry run mode
 - Uses Django's `RUN_MAIN` env var guard to avoid double-starting under the StatReloader
 
+### Order Execution
+- **Bracket orders**: each buy submits a single bracket order (buy + stop-loss atomically) via Alpaca's bracket order API. This eliminates "potential wash trade" rejections. Falls back to plain buy + separate stop if bracket is rejected.
+- Any existing stop-loss for a symbol is cancelled before re-buying to prevent conflicts.
+
 ### Safety Controls
-- `MAX_POSITION_USD` env var (default: `2.0`) — hard dollar cap enforced in `trading_interface._check_position_size` before any order is submitted; all scan signals are also capped to this value
+- `MAX_SHARE_PRICE_USD` env var (default: `25.0`) — skips stocks priced above this per-share limit; allows multiple shares to be bought up to Kelly-sized amount
 - `DRY_RUN` env var — skips actual order submission; **default is `true`** (safe mode). Set `DRY_RUN=false` to enable live execution.
 - `ALPACA_PAPER=true` env var — switches Alpaca client to paper trading mode (default: live)
+- 20% cash reserve enforced before every buy (`CASH_RESERVE_PCT`)
 
 ## Running
 - **Web UI**: `python manage.py runserver 0.0.0.0:5000`
