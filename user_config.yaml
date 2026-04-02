@@ -1,9 +1,14 @@
-# Configure these settings to adapt Monaimetrics to suit your own personal trading style and to toggle from demo / aper trading to live.
+# Configure these settings to adapt Monaimetrics to suit your own personal trading style
+# and to toggle from paper trading to live.
+# Secrets (API keys, passwords) stay in .env — only non-confidential settings live here.
 
-ALPACA_PAPER=true #toggle to FALSE to enable live trading
+# --- Trading mode ---
+ALPACA_PAPER=true   # Set to false to use live Alpaca account
+DRY_RUN=true        # Set to false to submit real orders
 
-MAX_POSITION_USD=2.0 # Max position size in USD
+# --- Position sizing ---
+MAX_POSITION_USD=2.0    # Hard cap per trade in USD
+CASH_RESERVE_PCT=0.20   # Fraction of cash to keep undeployed (0.20 = keep 20% as reserve)
 
-DRY_RUN=true #toggle to FALSE to enable live trading
-
-SCAN_UNIVERSE_LIMIT=200  # Max number of stocks to scan
+# --- Universe ---
+SCAN_UNIVERSE_LIMIT=200  # Max number of stocks to scan per assessment cycle

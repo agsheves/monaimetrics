@@ -227,6 +227,25 @@ class PortfolioManager:
                 qty=0, status="rejected", message="Zero position size",
             )
 
+        # Cash reserve check — never deploy more than (1 - cash_reserve_pct) of cash
+        try:
+            account = get_account(self.clients)
+            total_cash = float(account.cash)
+            reserve = total_cash * self.config.cash_reserve_pct
+            spendable = total_cash - reserve
+            if spendable < signal.position_size_usd:
+                return OrderResult(
+                    order_id="", symbol=signal.symbol, side="buy",
+                    qty=0, status="rejected",
+                    message=(
+                        f"Cash reserve: ${total_cash:.0f} total, "
+                        f"${reserve:.0f} held in reserve, "
+                        f"${spendable:.0f} spendable < ${signal.position_size_usd:.0f} needed"
+                    ),
+                )
+        except Exception as e:
+            log.warning("Could not check cash reserve for %s: %s", signal.symbol, e)
+
         price = get_latest_price(signal.symbol, self.clients)
         if price <= 0:
             return OrderResult(

@@ -397,6 +397,7 @@ class SystemConfig:
     alpha_signals: AlphaSignalsConfig = field(default_factory=AlphaSignalsConfig)
     dry_run: bool = True
     max_position_usd: float = 2.0
+    cash_reserve_pct: float = 0.20  # fraction of cash to keep undeployed
 
     def get_allocation(self, cycle_score: int) -> TierAllocation:
         clamped = max(-2, min(2, cycle_score))
@@ -468,4 +469,5 @@ def load_config(
         alpha_signals=AlphaSignalsConfig(),
         dry_run=os.environ.get("DRY_RUN", "true").lower() == "true",
         max_position_usd=float(os.environ.get("MAX_POSITION_USD", "2.0")),
+        cash_reserve_pct=float(os.environ.get("CASH_RESERVE_PCT", "0.20")),
     )
