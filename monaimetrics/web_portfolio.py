@@ -161,9 +161,9 @@ def scan_for_opportunities(
     try:
         account = get_account(clients)
     except Exception as e:
-        return {"error": str(e), "buy_signals": [], "other_signals": [], "scan_errors": [],
-                "scanned": [], "limit_usd": config.max_position_usd, "universe_size": 0,
-                "profile": profile.value}
+        return {"error": str(e), "buy_signals": [], "other_signals": [], "skipped_signals": [],
+                "scan_errors": [], "scanned": [], "limit_usd": config.max_share_price_usd,
+                "universe_size": 0, "profile": profile.value}
 
     if symbols:
         watchlist = symbols
@@ -213,14 +213,20 @@ def scan_for_opportunities(
             errors.append({"symbol": sym, "error": str(e)})
             log.warning("Scan failed for %s: %s", sym, e)
 
+    def _is_skipped(r: dict) -> bool:
+        return any("— skipping" in reason for reason in r.get("reasons", []))
+
     buy_signals = [r for r in results if r["action"] == "BUY"]
     buy_signals.sort(key=lambda r: r["confidence"], reverse=True)
-    other_signals = [r for r in results if r["action"] != "BUY"]
+    non_buy = [r for r in results if r["action"] != "BUY"]
+    other_signals = [r for r in non_buy if not _is_skipped(r)]
+    skipped_signals = [r for r in non_buy if _is_skipped(r)]
 
     return {
         "error": None,
         "buy_signals": buy_signals,
         "other_signals": other_signals,
+        "skipped_signals": skipped_signals,
         "scan_errors": errors,
         "scanned": watchlist,
         "universe_size": universe_size,
