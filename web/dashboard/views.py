@@ -41,7 +41,7 @@ def login_view(request: HttpRequest) -> HttpResponse:
             error = "APP_PASSWORD not configured in environment."
         elif username == expected_user and password == expected_pass:
             request.session["authenticated"] = True
-            request.session["risk_profile"] = "moderate"
+            request.session["risk_profile"] = os.environ.get("RISK_PROFILE", "moderate").lower()
             return redirect("dashboard")
         else:
             error = "Invalid credentials."

@@ -20,6 +20,7 @@ load_user_config()
 # Enums
 # ---------------------------------------------------------------------------
 
+
 class RiskProfile(Enum):
     CONSERVATIVE = "conservative"
     MODERATE = "moderate"
@@ -92,9 +93,11 @@ class EventConfidence(Enum):
 # Framework Configs
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CycleConfig:
     """Framework 1: Cycle Positioning (Marks)"""
+
     indicator_weights: tuple[float, ...] = (0.25, 0.25, 0.25, 0.25)
     lookback_years: int = 10
     assessment_frequency_days: int = 7
@@ -104,6 +107,7 @@ class CycleConfig:
 @dataclass
 class StageConfig:
     """Framework 2: Stage Analysis (Weinstein)"""
+
     ma_period_days: int = 150
     breakout_volume_multiple: float = 2.0
     confirmation_weeks: int = 2
@@ -111,17 +115,18 @@ class StageConfig:
 
 @dataclass
 class CANSLIMWeights:
-    current_earnings: float = 0.25   # C
-    annual_earnings: float = 0.20    # A
-    new_catalyst: float = 0.10       # N
-    supply_demand: float = 0.15      # S
-    leader_status: float = 0.20      # L
-    institutional: float = 0.10      # I
+    current_earnings: float = 0.25  # C
+    annual_earnings: float = 0.20  # A
+    new_catalyst: float = 0.10  # N
+    supply_demand: float = 0.15  # S
+    leader_status: float = 0.20  # L
+    institutional: float = 0.10  # I
 
 
 @dataclass
 class CANSLIMConfig:
     """Framework 3: Growth Quality (O'Neil)"""
+
     min_composite_score: int = 60
     weights: CANSLIMWeights = field(default_factory=CANSLIMWeights)
     leader_rs_threshold: int = 70
@@ -130,6 +135,7 @@ class CANSLIMConfig:
 @dataclass
 class GreenblattConfig:
     """Framework 4: Quality-Value (Magic Formula)"""
+
     roc_minimum_pct: float = 0.15
     reranking_frequency_days: int = 30
     sector_exclusions: tuple[str, ...] = ("financials", "utilities")
@@ -140,6 +146,7 @@ class GreenblattConfig:
 @dataclass
 class EventCascadeConfig:
     """Framework 5: Event-News-Price Cascade"""
+
     reaction_blackout_hours: int = 4
     overreaction_threshold: float = 2.0
     underreaction_threshold: float = 0.3
@@ -150,6 +157,7 @@ class EventCascadeConfig:
 @dataclass
 class AsymmetryConfig:
     """Framework 6: Asymmetric Opportunity (Thorp)"""
+
     min_ratio: float = 3.0
     dislocation_scan_drawdown: float = 0.15
     speed_premium_ratio: float = 5.0
@@ -159,6 +167,7 @@ class AsymmetryConfig:
 @dataclass
 class KellyConfig:
     """Framework 7: Conviction-Weighted Sizing"""
+
     min_conviction: int = 40
     volatility_lookback_days: int = 30
     edge_decay_factor: float = 0.95
@@ -168,15 +177,16 @@ class KellyConfig:
 # Tier Configs
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ModerateTierConfig:
     profit_target: float = 0.15  # overridable via PROFIT_TARGET env / user_config.yaml
-    stop_loss: float = 0.06      # overridable via STOP_LOSS env / user_config.yaml
+    stop_loss: float = 0.06  # overridable via STOP_LOSS env / user_config.yaml
     vol_adjustment_factor: float = 0.5
     non_perf_review_weeks: int = 4
     non_perf_gain_threshold: float = 0.05
     max_hold_weeks: int = 12
-    max_position: float = 0.10
+    max_position: float = 0.15
     kelly_fraction: float = 0.25
 
 
@@ -190,13 +200,14 @@ class HighRiskTierConfig:
     non_perf_gain_threshold: float = 0.08
     max_hold_weeks: int = 10
     thesis_expiry_weeks: int = 8
-    max_position: float = 0.05
+    max_position: float = 0.25
     kelly_fraction: float = 0.35
 
 
 # ---------------------------------------------------------------------------
 # Allocation
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class TierAllocation:
@@ -214,23 +225,23 @@ ALLOCATION_TABLES: dict[RiskProfile, dict[int, TierAllocation]] = {
     RiskProfile.CONSERVATIVE: {
         -2: TierAllocation(0.60, 0.36, 0.04),
         -1: TierAllocation(0.65, 0.30, 0.05),
-         0: TierAllocation(0.75, 0.15, 0.10),
-         1: TierAllocation(0.80, 0.10, 0.10),
-         2: TierAllocation(0.82, 0.05, 0.13),
+        0: TierAllocation(0.75, 0.15, 0.10),
+        1: TierAllocation(0.80, 0.10, 0.10),
+        2: TierAllocation(0.82, 0.05, 0.13),
     },
     RiskProfile.MODERATE: {
         -2: TierAllocation(0.50, 0.46, 0.04),
         -1: TierAllocation(0.55, 0.40, 0.05),
-         0: TierAllocation(0.65, 0.28, 0.07),
-         1: TierAllocation(0.70, 0.20, 0.10),
-         2: TierAllocation(0.77, 0.10, 0.13),
+        0: TierAllocation(0.65, 0.28, 0.07),
+        1: TierAllocation(0.70, 0.20, 0.10),
+        2: TierAllocation(0.77, 0.10, 0.13),
     },
     RiskProfile.AGGRESSIVE: {
         -2: TierAllocation(0.42, 0.55, 0.03),
         -1: TierAllocation(0.47, 0.48, 0.05),
-         0: TierAllocation(0.55, 0.40, 0.05),
-         1: TierAllocation(0.60, 0.30, 0.10),
-         2: TierAllocation(0.65, 0.22, 0.13),
+        0: TierAllocation(0.55, 0.40, 0.05),
+        1: TierAllocation(0.60, 0.30, 0.10),
+        2: TierAllocation(0.65, 0.22, 0.13),
     },
 }
 
@@ -238,6 +249,7 @@ ALLOCATION_TABLES: dict[RiskProfile, dict[int, TierAllocation]] = {
 # ---------------------------------------------------------------------------
 # Safety / Circuit Breakers
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class CircuitBreakerConfig:
@@ -266,6 +278,7 @@ class StructuralDivergenceConfig:
 # Rebalancing
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class RebalanceConfig:
     drift_threshold: float = 0.07
@@ -277,6 +290,7 @@ class RebalanceConfig:
 # Hold Audit
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class HoldAuditConfig:
     frequency_days: int = 7
@@ -285,6 +299,7 @@ class HoldAuditConfig:
 # ---------------------------------------------------------------------------
 # Framework Weighting by Tier
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class FrameworkWeights:
@@ -313,6 +328,7 @@ FRAMEWORK_WEIGHTS: dict[Tier, FrameworkWeights] = {
 # ---------------------------------------------------------------------------
 # API / External
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class APIConfig:
@@ -349,6 +365,7 @@ def _load_api_config() -> APIConfig:
 # Alpha Signals
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class AlphaSignalsConfig:
     enabled: bool = False
@@ -361,6 +378,7 @@ class AlphaSignalsConfig:
 # ---------------------------------------------------------------------------
 # Main Config
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class SystemConfig:
@@ -397,6 +415,7 @@ class SystemConfig:
 # Profile Factory
 # ---------------------------------------------------------------------------
 
+
 def load_config(
     profile: RiskProfile = RiskProfile.MODERATE,
 ) -> SystemConfig:
@@ -405,13 +424,17 @@ def load_config(
     tier_defaults: dict[RiskProfile, dict] = {
         RiskProfile.CONSERVATIVE: dict(
             moderate=dict(
-                profit_target=0.20, stop_loss=0.06,
-                kelly_fraction=0.15, max_position=0.08,
+                profit_target=0.20,
+                stop_loss=0.06,
+                kelly_fraction=0.15,
+                max_position=0.08,
                 non_perf_review_weeks=3,
             ),
             high=dict(
-                kelly_fraction=0.25, max_position=0.04,
-                atr_stop_multiplier=2.0, non_perf_review_weeks=5,
+                kelly_fraction=0.25,
+                max_position=0.04,
+                atr_stop_multiplier=2.0,
+                non_perf_review_weeks=5,
             ),
             circuit=dict(max_drawdown=0.12),
         ),
@@ -422,13 +445,17 @@ def load_config(
         ),
         RiskProfile.AGGRESSIVE: dict(
             moderate=dict(
-                profit_target=0.30, stop_loss=0.10,
-                kelly_fraction=0.30, max_position=0.12,
+                profit_target=0.30,
+                stop_loss=0.10,
+                kelly_fraction=0.30,
+                max_position=0.12,
                 non_perf_review_weeks=5,
             ),
             high=dict(
-                kelly_fraction=0.40, max_position=0.07,
-                atr_stop_multiplier=3.0, non_perf_review_weeks=8,
+                kelly_fraction=0.40,
+                max_position=0.07,
+                atr_stop_multiplier=3.0,
+                non_perf_review_weeks=8,
             ),
             circuit=dict(max_drawdown=0.25),
         ),
@@ -473,7 +500,9 @@ def load_config(
     )
 
 
-def load_config_from_env(default_profile: RiskProfile = RiskProfile.MODERATE) -> SystemConfig:
+def load_config_from_env(
+    default_profile: RiskProfile = RiskProfile.MODERATE,
+) -> SystemConfig:
     """
     Like load_config() but reads the risk profile from the RISK_PROFILE environment
     variable (set via user_config.yaml or Replit secrets) instead of requiring a
