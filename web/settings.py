@@ -1,7 +1,13 @@
 import os
 from pathlib import Path
 
+from monaimetrics.user_config import load_user_config
+
 BASE_DIR = Path(__file__).resolve().parent
+
+# API keys come from Replit app secrets (already in os.environ).
+# Non-secret settings (trading mode, position sizing, etc.) come from user_config.yaml.
+load_user_config()
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-insecure-key-change-in-production")
 
@@ -22,6 +28,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -60,6 +67,11 @@ CSRF_COOKIE_SAMESITE = "None"
 STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGES = {
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

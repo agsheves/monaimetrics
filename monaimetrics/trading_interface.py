@@ -15,8 +15,10 @@ from alpaca.trading.requests import (
     LimitOrderRequest,
     StopOrderRequest,
     StopLimitOrderRequest,
+    TakeProfitRequest,
+    StopLossRequest,
 )
-from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus
+from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus, OrderClass
 from alpaca.common.exceptions import APIError
 
 from monaimetrics.config import SystemConfig
@@ -50,6 +52,7 @@ class OrderResult:
     filled_qty: float = 0.0
     filled_avg_price: float | None = None
     message: str = ""
+    order_type: str = ""  # "market", "limit", "stop", "stop_limit", or ""
 
 
 # ---------------------------------------------------------------------------
@@ -61,24 +64,15 @@ def _check_position_size(
     price: float,
     config: SystemConfig,
 ) -> str | None:
-    """Returns error message if order outside min/max position range, else None."""
+    """Returns error message if the stock's price per share exceeds the cap, else None."""
     if request.side != "buy":
         return None
 
-    order_value = request.qty * price
-
-    # Hard dollar cap — overrides all other sizing logic
-    if order_value > config.max_position_usd:
+    # Share price cap — skip stocks that cost more per share than the limit
+    if price > config.max_share_price_usd:
         return (
-            f"Order value ${order_value:,.2f} exceeds hard position limit "
-            f"${config.max_position_usd:,.2f}"
-        )
-
-    # Minimum position size — avoid dust trades
-    if order_value < config.min_position_usd:
-        return (
-            f"Order value ${order_value:,.2f} below minimum position size "
-            f"${config.min_position_usd:,.2f}"
+            f"Share price ${price:,.2f} exceeds per-share limit "
+            f"${config.max_share_price_usd:,.2f}"
         )
 
     return None
@@ -125,6 +119,11 @@ def _result_from_alpaca(order) -> OrderResult:
         OrderStatus.CANCELED: "cancelled",
         OrderStatus.REJECTED: "rejected",
     }
+    order_type_str = ""
+    try:
+        order_type_str = order.order_type.value if order.order_type else ""
+    except Exception:
+        pass
     return OrderResult(
         order_id=str(order.id),
         symbol=order.symbol,
@@ -133,6 +132,7 @@ def _result_from_alpaca(order) -> OrderResult:
         status=status_map.get(order.status, str(order.status)),
         filled_qty=float(order.filled_qty) if order.filled_qty else 0.0,
         filled_avg_price=float(order.filled_avg_price) if order.filled_avg_price else None,
+        order_type=order_type_str,
     )
 
 
@@ -219,6 +219,102 @@ def submit_order(
             status="rejected",
             message=str(e),
         )
+
+
+# ---------------------------------------------------------------------------
+# Bracket Orders (buy + stop-loss in one atomic request)
+# ---------------------------------------------------------------------------
+
+def submit_bracket_buy(
+    symbol: str,
+    qty: float,
+    stop_price: float,
+    config: SystemConfig,
+    target_price: float | None = None,
+    clients: AlpacaClients | None = None,
+) -> tuple[OrderResult, str, bool]:
+    """
+    Submit a bracket buy order: a single market buy with an embedded stop-loss
+    (and optional take-profit) attached.  This avoids Alpaca "potential wash
+    trade" rejections that occur when a separate stop order is open for the
+    same symbol.
+
+    Returns:
+        (OrderResult, stop_order_id, bracket_used)
+
+        *stop_order_id* — the stop-loss leg order ID, or "" if not yet
+            available (pending fill) or in dry-run mode.
+        *bracket_used* — True when the bracket was successfully submitted
+            (stop is broker-managed); False when we fell back to a plain
+            market buy (caller must place a separate stop).
+
+    The caller should only submit an independent stop order when
+    ``bracket_used is False``.  A successful bracket with no leg ID (e.g.
+    pending fill) still owns the stop atomically — no second stop needed.
+    """
+    if config.dry_run:
+        log.info(
+            "DRY RUN: BRACKET BUY %s %s shares, stop=%.2f%s",
+            qty, symbol, stop_price,
+            f", target={target_price:.2f}" if target_price else "",
+        )
+        return (
+            OrderResult(
+                order_id="dry_run",
+                symbol=symbol,
+                side="buy",
+                qty=qty,
+                status="dry_run",
+                message="Dry run — no bracket order placed",
+            ),
+            "",
+            True,   # treat dry-run as "bracket used" — no separate stop needed
+        )
+
+    c = (clients or get_clients()).trading
+    try:
+        stop_req = StopLossRequest(stop_price=round(stop_price, 2))
+        kwargs: dict = dict(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.BUY,
+            time_in_force=TimeInForce.DAY,
+            order_class=OrderClass.BRACKET,
+            stop_loss=stop_req,
+        )
+        if target_price and target_price > 0:
+            kwargs["take_profit"] = TakeProfitRequest(limit_price=round(target_price, 2))
+
+        order = c.submit_order(MarketOrderRequest(**kwargs))
+        result = _result_from_alpaca(order)
+        log.info(
+            "BRACKET BUY: %s %s shares — %s (id=%s)",
+            qty, symbol, result.status, result.order_id,
+        )
+
+        # Extract the stop-loss leg order ID.
+        # Bracket orders have two sell legs: a stop-loss (order_type=stop)
+        # and optionally a take-profit (order_type=limit).  Identify the
+        # stop-loss leg by the presence of stop_price, not just by side.
+        stop_order_id = ""
+        if hasattr(order, "legs") and order.legs:
+            for leg in order.legs:
+                leg_stop = getattr(leg, "stop_price", None)
+                if leg_stop is not None:
+                    stop_order_id = str(leg.id)
+                    break
+
+        return result, stop_order_id, True
+
+    except APIError as e:
+        log.error("Bracket buy failed for %s: %s — falling back to plain market order", symbol, e)
+        # Fallback: plain market buy; caller is responsible for placing a stop.
+        result = submit_order(
+            OrderRequest(symbol=symbol, side="buy", qty=qty),
+            config=config,
+            clients=clients,
+        )
+        return result, "", False
 
 
 # ---------------------------------------------------------------------------

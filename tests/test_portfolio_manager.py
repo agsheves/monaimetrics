@@ -33,8 +33,6 @@ def make_position(
     current_price=110.0,
     stop_price=92.0,
     target_price=125.0,
-    trailing_stop=0.0,
-    highest_price=110.0,
     weeks_held=2,
     qty=10.0,
 ) -> ManagedPosition:
@@ -42,7 +40,6 @@ def make_position(
         symbol=symbol, tier=tier, qty=qty, entry_price=entry_price,
         entry_date=NOW - timedelta(weeks=weeks_held),
         stop_price=stop_price, target_price=target_price,
-        trailing_stop=trailing_stop, highest_price=highest_price,
         current_price=current_price, weeks_held=weeks_held,
     )
 
@@ -190,10 +187,12 @@ class TestExecutePlan:
 
 
 class TestCircuitBreakers:
-    def test_rapid_loss_triggers_pause(self):
+    def test_drawdown_triggers_pause(self):
         pm = make_pm()
-        # Set peak to 0 so drawdown check is skipped (peak must be > 0)
-        pm.peak_value = 0.0
+        pm.peak_value = 100000.0
+        # Simulate drawdown — mock account by setting peak high and checking
+        # Circuit breaker checks account via API, so in dry-run we test the logic
+        # by directly setting state
         pm.paused = False
         pm.stops_today = 3
         pm.stops_today_date = datetime.now(timezone.utc).date()

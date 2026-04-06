@@ -19,20 +19,15 @@ from monaimetrics.data_input import (
 )
 from monaimetrics.strategy import (
     ManagedPosition, Signal, TradingPlan,
-    review_position, evaluate_opportunity, update_trailing_stop,
+    review_position, evaluate_opportunity,
     generate_plan,
 )
 from monaimetrics.trading_interface import (
     OrderRequest, OrderResult,
-    submit_order, place_stop_order, cancel_order, get_open_orders,
-    cancel_all_orders,
+    submit_order, submit_bracket_buy, place_stop_order, cancel_order,
+    get_open_orders, cancel_all_orders,
 )
 from monaimetrics import calculators
-from monaimetrics import trade_journal
-from monaimetrics import notifications
-from monaimetrics import pm_state as pm_state_mod
-from monaimetrics import strategy_tracker
-from monaimetrics.fundamental_data import get_fundamentals, FundamentalData
 from monaimetrics.alpha_signals import (
     SignalCache, TradeTypeResolver,
     load_signal_definitions, refresh_signals,
@@ -68,12 +63,11 @@ class PortfolioManager:
         self,
         config: SystemConfig,
         clients: AlpacaClients | None = None,
-        restore_state: bool = False,
     ):
         self.config = config
         self.clients = clients or get_clients(config.api)
         self.managed_positions: list[ManagedPosition] = []
-        self.stop_order_ids: dict[str, str] = {}
+        self.stop_order_ids: dict[str, str] = {}  # symbol → stop order id
         self.execution_log: list[ExecutionRecord] = []
         self.cycle_score: int = 0
         self.peak_value: float = 0.0
@@ -82,9 +76,6 @@ class PortfolioManager:
         self.paused: bool = False
         self.pause_reason: str = ""
         self.pause_until: datetime | None = None
-
-        if restore_state:
-            self._restore_state()
 
         # Alpha signals
         self.alpha_definitions = []
@@ -106,138 +97,6 @@ class PortfolioManager:
                 )
             except Exception as e:
                 log.warning("Failed to load alpha signals: %s", e)
-
-    # ----- State Persistence -----
-
-    def _restore_state(self):
-        """Restore persisted state from disk (positions, stops, circuit breakers)."""
-        state = pm_state_mod.load()
-        if not state.positions:
-            return
-
-        from monaimetrics.config import Tier
-        for pp in state.positions:
-            tier = Tier(pp.tier) if pp.tier in ("moderate", "high") else Tier.MODERATE
-            try:
-                entry_date = datetime.fromisoformat(pp.entry_date)
-            except Exception:
-                entry_date = datetime.now(timezone.utc)
-            self.managed_positions.append(ManagedPosition(
-                symbol=pp.symbol, tier=tier, qty=pp.qty,
-                entry_price=pp.entry_price, entry_date=entry_date,
-                stop_price=pp.stop_price, target_price=pp.target_price,
-                trailing_stop=pp.trailing_stop, highest_price=pp.highest_price,
-                current_price=pp.current_price, weeks_held=pp.weeks_held,
-            ))
-
-        self.stop_order_ids = dict(state.stop_order_ids)
-        self.peak_value = state.peak_value
-        self.cycle_score = state.cycle_score
-        self.stops_today = state.stops_today
-        if state.stops_today_date:
-            try:
-                from datetime import date as date_type
-                parts = state.stops_today_date.split("-")
-                self.stops_today_date = date_type(int(parts[0]), int(parts[1]), int(parts[2]))
-            except Exception:
-                self.stops_today_date = None
-        self.paused = state.paused
-        self.pause_reason = state.pause_reason
-        if state.pause_until:
-            try:
-                self.pause_until = datetime.fromisoformat(state.pause_until)
-            except Exception:
-                self.pause_until = None
-
-        log.info(
-            "Restored state: %d positions, peak=$%.0f, cycle=%d, paused=%s",
-            len(self.managed_positions), self.peak_value,
-            self.cycle_score, self.paused,
-        )
-
-    def _save_state(self):
-        """Persist current state to disk."""
-        positions = []
-        for pos in self.managed_positions:
-            positions.append(pm_state_mod.PersistedPosition(
-                symbol=pos.symbol, tier=pos.tier.value, qty=pos.qty,
-                entry_price=pos.entry_price,
-                entry_date=pos.entry_date.isoformat(),
-                stop_price=pos.stop_price, target_price=pos.target_price,
-                trailing_stop=pos.trailing_stop, highest_price=pos.highest_price,
-                current_price=pos.current_price, weeks_held=pos.weeks_held,
-            ))
-
-        state = pm_state_mod.PMState(
-            positions=positions,
-            stop_order_ids=dict(self.stop_order_ids),
-            peak_value=self.peak_value,
-            cycle_score=self.cycle_score,
-            stops_today=self.stops_today,
-            stops_today_date=(
-                self.stops_today_date.isoformat()
-                if hasattr(self.stops_today_date, 'isoformat') and self.stops_today_date
-                else str(self.stops_today_date or "")
-            ),
-            paused=self.paused,
-            pause_reason=self.pause_reason,
-            pause_until=self.pause_until.isoformat() if self.pause_until else "",
-        )
-        pm_state_mod.save(state)
-
-    def reconcile_positions(self):
-        """
-        Reconcile managed positions against actual broker positions.
-        Logs discrepancies as RECONCILIATION events.
-        """
-        try:
-            broker_positions = get_positions(self.clients)
-        except Exception as e:
-            log.warning("Reconciliation failed — cannot fetch broker positions: %s", e)
-            return
-
-        broker_symbols = {p.symbol for p in broker_positions}
-        managed_symbols = {p.symbol for p in self.managed_positions}
-
-        # Positions at broker but not managed (opened outside system)
-        for bp in broker_positions:
-            if bp.symbol not in managed_symbols:
-                msg = (
-                    f"Position {bp.symbol} ({bp.qty} shares @ ${bp.current_price:.2f}) "
-                    f"found at broker but not tracked by system"
-                )
-                trade_journal.log_event(
-                    "RECONCILIATION", symbol=bp.symbol,
-                    data={"issue": "untracked_position", "qty": bp.qty,
-                          "price": bp.current_price},
-                    reasons=[msg],
-                )
-                notifications.notify(
-                    "RECONCILIATION", f"Untracked: {bp.symbol}",
-                    msg, symbol=bp.symbol, priority="high",
-                )
-                log.warning("Reconciliation: %s", msg)
-
-        # Managed positions not at broker (sold outside system)
-        for mp in list(self.managed_positions):
-            if mp.symbol not in broker_symbols:
-                msg = (
-                    f"Managed position {mp.symbol} ({mp.qty} shares) "
-                    f"not found at broker — may have been sold externally"
-                )
-                trade_journal.log_event(
-                    "RECONCILIATION", symbol=mp.symbol,
-                    data={"issue": "missing_at_broker", "qty": mp.qty},
-                    reasons=[msg],
-                )
-                notifications.notify(
-                    "RECONCILIATION", f"Missing: {mp.symbol}",
-                    msg, symbol=mp.symbol, priority="high",
-                )
-                log.warning("Reconciliation: %s", msg)
-                self.managed_positions = [
-                    p for p in self.managed_positions if p.symbol != mp.symbol
-                ]
 
     # ----- Alpha Signals -----
 
@@ -267,7 +126,6 @@ class PortfolioManager:
                 price = get_latest_price(pos.symbol, self.clients)
                 if price > 0:
                     pos.current_price = price
-                    pos.highest_price = max(pos.highest_price, price)
             except Exception as e:
                 log.warning("Price fetch failed for %s: %s", pos.symbol, e)
 
@@ -312,15 +170,6 @@ class PortfolioManager:
                 self.paused = True
                 self.pause_reason = f"Max drawdown {drawdown:.1%} >= {self.config.circuit_breakers.max_drawdown:.1%}"
                 log.warning("Circuit breaker: %s", self.pause_reason)
-                trade_journal.log_event(
-                    "CIRCUIT_BREAKER", action="PAUSE",
-                    reasons=[self.pause_reason],
-                    data={"drawdown": round(drawdown, 4), "peak": self.peak_value},
-                )
-                notifications.notify(
-                    "SYSTEM_PAUSED", "Circuit Breaker: Drawdown",
-                    self.pause_reason, priority="critical",
-                )
                 return True
 
         # Rapid loss (3+ stops in one day)
@@ -336,46 +185,9 @@ class PortfolioManager:
             )
             self.pause_reason = f"Rapid loss: {self.stops_today} stops today"
             log.warning("Circuit breaker: %s", self.pause_reason)
-            trade_journal.log_event(
-                "CIRCUIT_BREAKER", action="PAUSE",
-                reasons=[self.pause_reason],
-                data={"stops_today": self.stops_today},
-            )
-            notifications.notify(
-                "SYSTEM_PAUSED", "Circuit Breaker: Rapid Loss",
-                self.pause_reason, priority="critical",
-            )
             return True
 
         return self.paused
-
-    # ----- Trailing Stop Maintenance -----
-
-    def update_trailing_stops(self):
-        """Recalculate trailing stops for all high-risk positions."""
-        for pos in self.managed_positions:
-            if pos.tier != Tier.HIGH:
-                continue
-            try:
-                tech = get_technical_data(pos.symbol, days=30, clients=self.clients)
-                new_stop = update_trailing_stop(pos, tech, self.config)
-                if new_stop > pos.trailing_stop:
-                    pos.trailing_stop = new_stop
-                    old_id = self.stop_order_ids.get(pos.symbol, "")
-                    if old_id and not self.config.dry_run:
-                        cancel_order(old_id, self.config, self.clients)
-                    result = place_stop_order(
-                        pos.symbol, pos.qty, new_stop,
-                        self.config, clients=self.clients,
-                    )
-                    if result.order_id:
-                        self.stop_order_ids[pos.symbol] = result.order_id
-                    log.info(
-                        "Trailing stop updated %s: %.2f → %.2f",
-                        pos.symbol, pos.trailing_stop, new_stop,
-                    )
-            except Exception as e:
-                log.warning("Trailing stop update failed for %s: %s", pos.symbol, e)
 
     # ----- Execute Signals -----
 
@@ -386,30 +198,24 @@ class PortfolioManager:
                 qty=0, status="rejected", message="Zero position size",
             )
 
-        # Enforce runtime position limits (min/max USD per trade)
-        from monaimetrics import runtime_settings
-        rt = runtime_settings.load()
-        clamped_size = min(signal.position_size_usd, rt.max_position_usd)
-        if clamped_size < rt.min_position_usd:
-            return OrderResult(
-                order_id="", symbol=signal.symbol, side="buy",
-                qty=0, status="rejected",
-                message=f"Position ${signal.position_size_usd:.0f} below minimum ${rt.min_position_usd:.0f}",
-            )
-
-        # Also check buying power
+        # Cash reserve check — never deploy more than (1 - cash_reserve_pct) of cash
         try:
             account = get_account(self.clients)
-            if clamped_size > account.buying_power:
-                clamped_size = account.buying_power
-                if clamped_size < rt.min_position_usd:
-                    return OrderResult(
-                        order_id="", symbol=signal.symbol, side="buy",
-                        qty=0, status="rejected",
-                        message=f"Insufficient buying power (${account.buying_power:.2f})",
-                    )
-        except Exception:
-            pass
+            total_cash = float(account.cash)
+            reserve = total_cash * self.config.cash_reserve_pct
+            spendable = total_cash - reserve
+            if spendable < signal.position_size_usd:
+                return OrderResult(
+                    order_id="", symbol=signal.symbol, side="buy",
+                    qty=0, status="rejected",
+                    message=(
+                        f"Cash reserve: ${total_cash:.0f} total, "
+                        f"${reserve:.0f} held in reserve, "
+                        f"${spendable:.0f} spendable < ${signal.position_size_usd:.0f} needed"
+                    ),
+                )
+        except Exception as e:
+            log.warning("Could not check cash reserve for %s: %s", signal.symbol, e)
 
         price = get_latest_price(signal.symbol, self.clients)
         if price <= 0:
@@ -418,16 +224,27 @@ class PortfolioManager:
                 qty=0, status="rejected", message="Could not get price",
             )
 
-        qty = floor(clamped_size / price)
+        qty = floor(signal.position_size_usd / price)
         if qty < 1:
             return OrderResult(
                 order_id="", symbol=signal.symbol, side="buy",
                 qty=0, status="rejected", message="Size below 1 share",
             )
 
-        result = submit_order(
-            OrderRequest(symbol=signal.symbol, side="buy", qty=qty),
-            self.config, self.clients,
+        # Cancel any existing stop order for this symbol before buying to avoid
+        # "potential wash trade" rejections from Alpaca.
+        old_stop_id = self.stop_order_ids.pop(signal.symbol, "")
+        if old_stop_id and not self.config.dry_run:
+            cancel_order(old_stop_id, self.config, self.clients)
+
+        # Submit as a bracket order (buy + embedded stop-loss in one request).
+        # Falls back to plain buy + separate stop if the bracket is rejected.
+        target = signal.target_price if signal.target_price > 0 else None
+        result, stop_order_id, bracket_used = submit_bracket_buy(
+            signal.symbol, qty, signal.stop_price,
+            config=self.config,
+            target_price=target,
+            clients=self.clients,
         )
 
         if result.status in ("accepted", "filled", "dry_run"):
@@ -440,43 +257,32 @@ class PortfolioManager:
                 entry_date=datetime.now(timezone.utc),
                 stop_price=signal.stop_price,
                 target_price=signal.target_price,
-                trailing_stop=signal.stop_price if signal.tier == Tier.HIGH else 0.0,
-                highest_price=entry,
                 current_price=entry,
+                bracket_position=bracket_used,
             )
             self.managed_positions.append(pos)
 
-            # Place broker-side stop
-            stop_result = place_stop_order(
-                signal.symbol, qty, signal.stop_price,
-                self.config, clients=self.clients,
-            )
-            if stop_result.order_id:
-                self.stop_order_ids[signal.symbol] = stop_result.order_id
+            if stop_order_id:
+                # Got the stop-loss leg ID from the bracket — track it for
+                # later cancel/update (e.g. breakeven lock).
+                self.stop_order_ids[signal.symbol] = stop_order_id
+            elif not bracket_used:
+                # Bracket was rejected and we fell back to a plain market buy;
+                # place a separate stop-loss now.
+                stop_result = place_stop_order(
+                    signal.symbol, qty, signal.stop_price,
+                    self.config, clients=self.clients,
+                )
+                if stop_result.order_id:
+                    self.stop_order_ids[signal.symbol] = stop_result.order_id
+            # else: bracket accepted but no leg ID yet (pending fill) — the
+            # stop is broker-managed; do NOT create a second stop order.
 
             log.info(
-                "BUY %s %d shares @ %.2f (%s tier, stop=%.2f)",
-                signal.symbol, qty, entry, signal.tier.value, signal.stop_price,
+                "BUY %s %d shares @ %.2f (%s tier, stop=%.2f, bracket=%s)",
+                signal.symbol, qty, entry, signal.tier.value,
+                signal.stop_price, bracket_used,
             )
-
-            # Journal + notification + tracker
-            trade_journal.log_event(
-                "EXECUTION", symbol=signal.symbol, action="BUY",
-                confidence=signal.confidence, price=entry,
-                qty=qty, value=round(qty * entry, 2),
-                reasons=signal.reasons,
-            )
-            notifications.notify(
-                "TRADE_EXECUTED",
-                f"BUY {signal.symbol}",
-                f"Bought {qty} shares @ ${entry:.2f} "
-                f"(confidence {signal.confidence}/100, {signal.tier.value} tier). "
-                + (signal.reasons[0] if signal.reasons else ""),
-                symbol=signal.symbol,
-            )
-            strategy_tracker.record_entry(signal.symbol, {
-                "confidence": signal.confidence,
-            })
 
         return result
 
@@ -516,27 +322,6 @@ class PortfolioManager:
                 signal.symbol, int(pos.qty), gain * 100,
                 signal.reasons[0] if signal.reasons else "unknown",
             )
-
-            # Journal + notification + tracker
-            is_stop = "stop" in " ".join(signal.reasons).lower()
-            event_type = "STOP_TRIGGERED" if is_stop else "EXECUTION"
-            trade_journal.log_event(
-                event_type, symbol=signal.symbol, action="SELL",
-                confidence=signal.confidence, price=pos.current_price,
-                qty=int(pos.qty), value=round(pos.qty * pos.current_price, 2),
-                outcome=f"{gain:+.1%}",
-                reasons=signal.reasons,
-            )
-            priority = "high" if is_stop else "standard"
-            notifications.notify(
-                "STOP_TRIGGERED" if is_stop else "TRADE_EXECUTED",
-                f"{'STOP' if is_stop else 'SELL'} {signal.symbol}",
-                f"Sold {int(pos.qty)} shares @ ${pos.current_price:.2f} "
-                f"({gain:+.1%}). " + (signal.reasons[0] if signal.reasons else ""),
-                symbol=signal.symbol,
-                priority=priority,
-            )
-            strategy_tracker.record_exit(signal.symbol, gain)
 
         return result
 
@@ -623,19 +408,16 @@ class PortfolioManager:
     def run_assessment(
         self,
         watchlist: list[str] | None = None,
-        execute: bool = True,
     ) -> tuple[TradingPlan, list[ExecutionRecord]]:
         """
-        Full cycle: sync positions, get data, ask strategy, optionally execute.
+        Full cycle: sync positions, get data, ask strategy, execute.
         Returns the plan and execution records.
-        If execute=False, returns the plan with an empty record list.
         """
         log.info("Starting assessment cycle")
 
         # 1. Sync
         self.sync_positions()
         self.update_weeks_held()
-        self.update_trailing_stops()
 
         # 2. Circuit breakers
         self.check_circuit_breakers()
@@ -656,22 +438,12 @@ class PortfolioManager:
             except Exception as e:
                 log.warning("Tech data failed for %s: %s", sym, e)
 
-        # 5. Fetch fundamentals (Alpha Vantage)
-        fund_map: dict[str, FundamentalData] = {}
-        for sym in all_symbols:
-            try:
-                fund = get_fundamentals(sym)
-                if fund:
-                    fund_map[sym] = fund
-            except Exception as e:
-                log.debug("Fundamentals unavailable for %s: %s", sym, e)
-
-        # 6. Refresh alpha signals
+        # 5. Refresh alpha signals
         if self.config.alpha_signals.enabled and self.config.alpha_signals.refresh_on_cycle:
             self.refresh_alpha_signals()
             self.trade_type_resolver.preload(all_symbols)
 
-        # 7. Ask strategy
+        # 6. Ask strategy
         alpha_kwargs = {}
         if self.config.alpha_signals.enabled and self.alpha_definitions:
             alpha_kwargs = dict(
@@ -683,7 +455,6 @@ class PortfolioManager:
         plan = generate_plan(
             self.managed_positions, technicals,
             account, tv, self.config, self.cycle_score,
-            fundamentals_map=fund_map,
             **alpha_kwargs,
         )
 
@@ -695,14 +466,8 @@ class PortfolioManager:
             sum(1 for s in plan.signals if s.action == SignalType.HOLD),
         )
 
-        # 8. Execute (or return plan-only for human review)
-        if execute:
-            records = self.execute_plan(plan)
-        else:
-            records = []
-
-        # 9. Persist state
-        self._save_state()
+        # 7. Execute
+        records = self.execute_plan(plan)
 
         return plan, records
 
@@ -720,7 +485,55 @@ class PortfolioManager:
         records = []
 
         for pos in list(self.managed_positions):
-            # Fixed stop
+            # Ratchet trailing stop: raise stop one 5% step for each 5% gain above entry.
+            # Stateless — computed from entry_price and current_price only.
+            # Updates both stop_price in memory and the broker-side stop order.
+            if pos.entry_price > 0 and pos.current_price > pos.entry_price:
+                ratchet_level = calculators.ratchet_stop_level(
+                    pos.entry_price, pos.current_price, self.config.ratchet_step_pct
+                )
+                if ratchet_level is not None and ratchet_level > pos.stop_price:
+                    old_id = self.stop_order_ids.get(pos.symbol, "")
+
+                    # For bracket positions without a tracked stop ID, scan open
+                    # orders to find and cancel the broker-side stop leg.
+                    # Filter by order_type=="stop" or "stop_limit" to avoid
+                    # accidentally cancelling a take-profit (limit) leg.
+                    if not old_id and pos.bracket_position and not self.config.dry_run:
+                        try:
+                            for open_ord in get_open_orders(self.clients):
+                                if (
+                                    open_ord.symbol == pos.symbol
+                                    and open_ord.side == "sell"
+                                    and open_ord.order_id
+                                    and open_ord.order_type in ("stop", "stop_limit")
+                                ):
+                                    old_id = open_ord.order_id
+                                    break
+                        except Exception as e:
+                            log.warning(
+                                "Ratchet: could not query open orders for %s: %s",
+                                pos.symbol, e,
+                            )
+
+                    if old_id and not self.config.dry_run:
+                        cancel_order(old_id, self.config, self.clients)
+                        self.stop_order_ids.pop(pos.symbol, None)
+
+                    stop_result = place_stop_order(
+                        pos.symbol, pos.qty, ratchet_level,
+                        self.config, clients=self.clients,
+                    )
+                    if stop_result.order_id:
+                        self.stop_order_ids[pos.symbol] = stop_result.order_id
+                    log.info(
+                        "Ratchet: %s stop raised $%.4f → $%.4f (entry=$%.4f, step=%.0f%%)",
+                        pos.symbol, pos.stop_price, ratchet_level, pos.entry_price,
+                        self.config.ratchet_step_pct * 100,
+                    )
+                    pos.stop_price = ratchet_level
+
+            # Fixed stop (covers ratcheted stop too — stop_price was updated above)
             if pos.current_price <= pos.stop_price:
                 signal = Signal(
                     symbol=pos.symbol,
@@ -736,24 +549,6 @@ class PortfolioManager:
                     signal=signal, order_result=result,
                 ))
                 continue
-
-            # Trailing stop (high-risk)
-            if pos.tier == Tier.HIGH and pos.trailing_stop > 0:
-                if pos.current_price <= pos.trailing_stop:
-                    signal = Signal(
-                        symbol=pos.symbol,
-                        action=SignalType.SELL,
-                        urgency=SignalUrgency.EMERGENCY,
-                        tier=pos.tier,
-                        confidence=100,
-                        reasons=[f"Trailing stop hit: {pos.current_price:.2f} <= {pos.trailing_stop:.2f}"],
-                    )
-                    result = self._execute_sell(signal)
-                    records.append(ExecutionRecord(
-                        timestamp=datetime.now(timezone.utc),
-                        signal=signal, order_result=result,
-                    ))
-                    continue
 
             # Profit target (moderate)
             if pos.tier == Tier.MODERATE and pos.target_price > 0:
@@ -775,7 +570,6 @@ class PortfolioManager:
         if records:
             self.execution_log.extend(records)
             self.check_circuit_breakers()
-            self._save_state()
 
         return records
 

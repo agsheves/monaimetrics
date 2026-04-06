@@ -5,95 +5,31 @@
 {% block content %}
 <div class="page-header">
     <h1>Settings</h1>
-    <p>Configure risk profile, position sizing, and execution controls</p>
+    <p>Adjust risk profile and view allocation tables</p>
 </div>
 
-<form method="post">
-    {% csrf_token %}
-
-    <div class="card">
-        <div class="card-title">Risk Profile</div>
+<div class="card">
+    <div class="card-title">Risk Profile</div>
+    <form method="post">
+        {% csrf_token %}
         <div class="radio-group">
             {% for p in profiles %}
             <div class="radio-option">
                 <input type="radio" name="risk_profile" id="profile_{{ p }}"
-                       value="{{ p }}" {% if p == settings.risk_profile %}checked{% endif %}>
+                       value="{{ p }}" {% if p == profile %}checked{% endif %}
+                       onchange="this.form.submit()">
                 <label for="profile_{{ p }}">{{ p|title }}</label>
             </div>{% endfor %}
         </div>
-    </div>
-
-    <div class="card">
-        <div class="card-title">Position Sizing</div>
-        <div class="settings-row">
-            <div class="form-group">
-                <label for="min_position_usd">Minimum Position ($)</label>
-                <input type="number" id="min_position_usd" name="min_position_usd"
-                       value="{{ settings.min_position_usd|floatformat:0 }}"
-                       min="10" max="100000" step="10">
-            </div>
-            <div class="form-group">
-                <label for="max_position_usd">Maximum Position ($)</label>
-                <input type="number" id="max_position_usd" name="max_position_usd"
-                       value="{{ settings.max_position_usd|floatformat:0 }}"
-                       min="10" max="100000" step="10">
-            </div>
-            <div class="form-group">
-                <label for="scan_universe_limit">Universe Limit</label>
-                <input type="number" id="scan_universe_limit" name="scan_universe_limit"
-                       value="{{ settings.scan_universe_limit }}"
-                       min="10" max="2000" step="10">
-            </div>
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-title">Execution Controls</div>
-        <div class="toggle-group">
-            <div class="toggle-row">
-                <div class="toggle-info">
-                    <div class="toggle-label">Dry Run</div>
-                    <div class="toggle-desc">When enabled, signals are logged but no real orders are placed</div>
-                </div>
-                <label class="toggle-switch">
-                    <input type="checkbox" name="dry_run" {% if settings.dry_run %}checked{% endif %}>
-                    <span class="toggle-slider"></span>
-                </label>
-            </div>
-            <div class="toggle-row">
-                <div class="toggle-info">
-                    <div class="toggle-label">Human Review</div>
-                    <div class="toggle-desc">Require manual approval before executing trades (stop-losses still fire automatically)</div>
-                </div>
-                <label class="toggle-switch">
-                    <input type="checkbox" name="human_review" {% if settings.human_review %}checked{% endif %}>
-                    <span class="toggle-slider"></span>
-                </label>
-            </div>
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-title">Notifications</div>
-        <div class="form-group">
-            <label for="webhook_url">Webhook URL (optional)</label>
-            <input type="text" id="webhook_url" name="webhook_url"
-                   value="{{ settings.webhook_url }}"
-                   placeholder="https://hooks.slack.com/...">
-            <p style="color: var(--text-muted); font-size: 0.78rem; margin-top: 0.25rem;">
-                POST JSON alerts to this URL. Works with Slack, Discord, or any webhook endpoint.
-            </p>
-        </div>
-    </div>
-
-    <button type="submit" class="btn btn-primary" style="margin-bottom: 1.5rem;">Save Settings</button>
-</form>
+    </form>
+</div>
 
 <div class="card">
-    <div class="card-title">Allocation Table — {{ settings.risk_profile|title }}</div>
+    <div class="card-title">Allocation Table — {{ profile|title }}</div>
     <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem;">
         Shows target allocation by cycle score. Cycle score ranges from -2 (bearish) to +2 (bullish).
     </p>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -122,5 +58,6 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 {% endblock %}

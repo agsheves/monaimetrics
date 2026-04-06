@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-header">
     <h1>Research</h1>
-    <p>Ask questions about the trading strategies, frameworks, and current positions</p>
+    <p>Ask questions about the trading strategies and frameworks behind Monaimetrics</p>
 </div>
 
 <div class="card">
@@ -13,23 +13,9 @@
         <div class="form-group">
             <label for="question">Your Question</label>
             <textarea id="question" name="question" rows="3"
-                      placeholder="e.g. How does the cycle positioning framework work? Why is AAPL in Stage 2?">{{ question }}</textarea>
+                      placeholder="e.g. How does the cycle positioning framework work?">{{ question }}</textarea>
         </div>
-        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-            <button type="submit" class="btn btn-primary">Ask</button>
-        </div>
-        {% if not question %}
-        <div class="quick-questions" style="margin-top: 1rem;">
-            <div class="card-title">Suggested questions</div>
-            <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.5rem;">
-                <button type="submit" name="question" value="Explain the 6 framework scoring system and how buy signals are generated" class="btn btn-secondary" style="font-size:0.78rem; padding:0.4rem 0.75rem;">How are buy signals generated?</button>
-                <button type="submit" name="question" value="What are the sell triggers and stop-loss rules?" class="btn btn-secondary" style="font-size:0.78rem; padding:0.4rem 0.75rem;">Sell triggers & stop-loss rules</button>
-                <button type="submit" name="question" value="How does Kelly Criterion position sizing work in this system?" class="btn btn-secondary" style="font-size:0.78rem; padding:0.4rem 0.75rem;">Kelly Criterion sizing</button>
-                <button type="submit" name="question" value="Explain the Stage Analysis framework and what each stage means for trading decisions" class="btn btn-secondary" style="font-size:0.78rem; padding:0.4rem 0.75rem;">Stage Analysis explained</button>
-                <button type="submit" name="question" value="What are the circuit breakers and when do they trigger?" class="btn btn-secondary" style="font-size:0.78rem; padding:0.4rem 0.75rem;">Circuit breakers</button>
-            </div>
-        </div>
-        {% endif %}
+        <button type="submit" class="btn btn-primary">Ask</button>
     </form>
 </div>
 
@@ -39,7 +25,7 @@
     {% if result.error %}
     <div class="alert alert-error">{{ result.answer }}</div>
     {% else %}
-    <div class="research-answer">{{ result.answer_html }}</div>
+    <div class="research-answer">{{ result.answer }}</div>
     {% endif %}
 </div>
 {% endif %}

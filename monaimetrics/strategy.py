@@ -13,7 +13,6 @@ from monaimetrics.config import (
 )
 from monaimetrics.data_input import TechnicalData, AccountInfo, PositionInfo
 from monaimetrics import calculators
-from monaimetrics.fundamental_data import FundamentalData
 from monaimetrics.alpha_signals import (
     SignalDefinition, SignalCache, compute_alpha_adjustment,
 )
@@ -33,11 +32,10 @@ class ManagedPosition:
     entry_date: datetime
     stop_price: float
     target_price: float
-    trailing_stop: float
-    highest_price: float
     current_price: float
     weeks_held: int = 0
     frameworks_at_entry: dict[str, float] = field(default_factory=dict)
+    bracket_position: bool = False   # True when bought via bracket order (stop is broker-managed)
 
 
 @dataclass
@@ -91,148 +89,14 @@ def score_technical(tech: TechnicalData, config: SystemConfig) -> float:
     )
 
 
-def score_canslim(
-    fund: FundamentalData | None,
-    tech: TechnicalData,
-    config: SystemConfig,
-) -> float:
-    """
-    Framework 3: CANSLIM Growth Quality (O'Neil). Returns 0-100.
-    Falls back to 50 (neutral) when no fundamental data is available.
-    """
-    if fund is None:
-        return 50.0
-
-    weights = config.canslim.weights
-
-    # C — Current Quarterly Earnings Growth YoY
-    cg = fund.quarterly_eps_growth_yoy
-    if cg >= 0.50:
-        c_score = 100.0
-    elif cg >= 0.25:
-        c_score = 70.0 + (cg - 0.25) / 0.25 * 30.0
-    elif cg > 0:
-        c_score = 40.0 + cg / 0.25 * 30.0
-    else:
-        c_score = max(0.0, 40.0 + cg * 100.0)
-
-    # A — Annual Earnings Growth (3-year CAGR)
-    ag = fund.annual_eps_growth_3yr
-    if ag >= 0.25:
-        a_score = 100.0
-    elif ag >= 0.15:
-        a_score = 70.0 + (ag - 0.15) / 0.10 * 30.0
-    elif ag > 0:
-        a_score = 40.0 + ag / 0.15 * 30.0
-    else:
-        a_score = max(0.0, 40.0 + ag * 100.0)
-
-    # N — New High / Catalyst (proximity to 52-week high)
-    n_score = 50.0
-    if fund.fifty_two_week_high > 0 and tech.price > 0:
-        pct = tech.price / fund.fifty_two_week_high
-        if pct >= 0.95:
-            n_score = 90.0 + min(10.0, (pct - 0.95) / 0.05 * 10.0)
-        elif pct >= 0.80:
-            n_score = 50.0 + (pct - 0.80) / 0.15 * 40.0
-        else:
-            n_score = max(0.0, pct / 0.80 * 50.0)
-
-    # S — Supply & Demand (float tightness + volume)
-    s_score = 50.0
-    if fund.shares_float > 0 and fund.shares_outstanding > 0:
-        float_pct = fund.shares_float / fund.shares_outstanding
-        if float_pct < 0.50:
-            s_score = 80.0
-        elif float_pct < 0.70:
-            s_score = 65.0
-    if tech.volume_ratio > 1.5:
-        s_score = min(100.0, s_score + 15.0)
-
-    # L — Leader Status (position within 52-week range)
-    l_score = 50.0
-    if fund.fifty_two_week_high > 0 and fund.fifty_two_week_low > 0 and tech.price > 0:
-        span = fund.fifty_two_week_high - fund.fifty_two_week_low
-        if span > 0:
-            l_score = ((tech.price - fund.fifty_two_week_low) / span) * 100.0
-
-    # I — Institutional Sponsorship (30-70% is ideal)
-    i_score = 50.0
-    if fund.percent_institutions > 0:
-        inst = fund.percent_institutions
-        if 0.30 <= inst <= 0.70:
-            i_score = 80.0 + (0.20 - abs(inst - 0.50)) / 0.20 * 20.0
-        elif inst > 0.70:
-            i_score = 60.0
-        else:
-            i_score = inst / 0.30 * 60.0
-
-    return calculators.composite_score(
-        scores={
-            "current_earnings": c_score,
-            "annual_earnings": a_score,
-            "new_catalyst": n_score,
-            "supply_demand": s_score,
-            "leader_status": l_score,
-            "institutional": i_score,
-        },
-        weights={
-            "current_earnings": weights.current_earnings,
-            "annual_earnings": weights.annual_earnings,
-            "new_catalyst": weights.new_catalyst,
-            "supply_demand": weights.supply_demand,
-            "leader_status": weights.leader_status,
-            "institutional": weights.institutional,
-        },
-    )
+def score_canslim_stub() -> float:
+    """Framework 3: stub — returns neutral until fundamental data is wired."""
+    return 50.0
 
 
-def score_greenblatt(
-    fund: FundamentalData | None,
-    config: SystemConfig,
-) -> float:
-    """
-    Framework 4: Quality-Value Magic Formula (Greenblatt). Returns 0-100.
-    Falls back to 50 (neutral) when no fundamental data is available.
-    """
-    if fund is None:
-        return 50.0
-
-    # Neutral for excluded sectors
-    if fund.sector.lower() in config.greenblatt.sector_exclusions:
-        return 50.0
-
-    # Earnings yield score (higher = better value)
-    ey = fund.earnings_yield
-    if ey >= 0.15:
-        ey_score = 100.0
-    elif ey >= 0.10:
-        ey_score = 70.0 + (ey - 0.10) / 0.05 * 30.0
-    elif ey >= 0.05:
-        ey_score = 40.0 + (ey - 0.05) / 0.05 * 30.0
-    elif ey > 0:
-        ey_score = ey / 0.05 * 40.0
-    else:
-        ey_score = 0.0
-
-    # Return on capital score (higher = better quality)
-    roc = fund.return_on_capital
-    roc_min = config.greenblatt.roc_minimum_pct
-    if roc >= roc_min * 3:
-        roc_score = 100.0
-    elif roc >= roc_min * 2:
-        roc_score = 70.0 + (roc - roc_min * 2) / roc_min * 30.0
-    elif roc >= roc_min:
-        roc_score = 40.0 + (roc - roc_min) / roc_min * 30.0
-    elif roc > 0:
-        roc_score = roc / roc_min * 40.0
-    else:
-        roc_score = 0.0
-
-    return calculators.composite_score(
-        scores={"earnings_yield": ey_score, "return_on_capital": roc_score},
-        weights={"earnings_yield": 0.50, "return_on_capital": 0.50},
-    )
+def score_greenblatt_stub() -> float:
+    """Framework 4: stub — returns neutral until fundamental data is wired."""
+    return 50.0
 
 
 def assess_event_cascade_stub() -> int:
@@ -298,25 +162,6 @@ def _check_stop_loss(pos: ManagedPosition) -> Signal | None:
             reasons=[
                 f"Stop-loss triggered: price ${pos.current_price:.2f} hit our "
                 f"${pos.stop_price:.2f} exit level — selling to limit losses",
-            ],
-        )
-    return None
-
-
-def _check_trailing_stop(pos: ManagedPosition) -> Signal | None:
-    if pos.tier != Tier.HIGH:
-        return None
-    if pos.trailing_stop > 0 and pos.current_price <= pos.trailing_stop:
-        return Signal(
-            symbol=pos.symbol,
-            action=SignalType.SELL,
-            urgency=SignalUrgency.EMERGENCY,
-            tier=pos.tier,
-            confidence=100,
-            reasons=[
-                f"Trailing stop triggered: price ${pos.current_price:.2f} "
-                f"pulled back below our raised stop at ${pos.trailing_stop:.2f} "
-                f"— locking in gains",
             ],
         )
     return None
@@ -449,7 +294,6 @@ def review_position(
     checks = [
         _check_stage4(pos, tech),
         _check_stop_loss(pos),
-        _check_trailing_stop(pos),
         _check_profit_target(pos),
         _check_non_performance(pos, config),
         _check_max_hold(pos, config),
@@ -506,38 +350,6 @@ def review_position(
 
 
 # ---------------------------------------------------------------------------
-# Trailing Stop Maintenance
-# ---------------------------------------------------------------------------
-
-def update_trailing_stop(
-    pos: ManagedPosition,
-    tech: TechnicalData,
-    config: SystemConfig,
-) -> float:
-    """Calculate updated trailing stop for a high-risk position."""
-    if pos.tier != Tier.HIGH:
-        return pos.trailing_stop
-
-    hr = config.high_risk_tier
-    milestones = [(m.gain_threshold, m.lock_gain) for m in hr.milestones]
-
-    highest = max(pos.highest_price, pos.current_price)
-
-    atr_mult = hr.mature_trail_atr_multiplier
-    if tech.stage == Stage.TOPPING.value:
-        atr_mult = hr.stage3_tighten_atr_multiplier
-
-    return calculators.trailing_stop_update(
-        current_stop=pos.trailing_stop,
-        highest_price=highest,
-        entry_price=pos.entry_price,
-        milestones=milestones,
-        atr=tech.atr_14,
-        mature_atr_multiplier=atr_mult,
-    )
-
-
-# ---------------------------------------------------------------------------
 # Opportunity Scan (buy-side)
 # ---------------------------------------------------------------------------
 
@@ -567,7 +379,6 @@ def evaluate_opportunity(
     available_capital: float,
     config: SystemConfig,
     *,
-    fundamentals: FundamentalData | None = None,
     symbol_types: set[str] | None = None,
     alpha_definitions: list[SignalDefinition] | None = None,
     alpha_cache: SignalCache | None = None,
@@ -576,6 +387,20 @@ def evaluate_opportunity(
     Evaluate a stock for a potential buy. Runs through framework gates and scoring.
     """
     reasons = []
+
+    # Gate 0: Share price cap — skip stocks above the per-share limit
+    if config.max_share_price_usd > 0 and tech.price > config.max_share_price_usd:
+        return Signal(
+            symbol=symbol,
+            action=SignalType.WATCH,
+            urgency=SignalUrgency.MONITOR,
+            tier=tier,
+            confidence=0,
+            reasons=[
+                f"Share price ${tech.price:.2f} exceeds cap of "
+                f"${config.max_share_price_usd:.2f} — skipping"
+            ],
+        )
 
     # Gate 1: Stage must be 2 (advancing)
     stage = assess_stage(tech)
@@ -597,8 +422,8 @@ def evaluate_opportunity(
 
     # Score frameworks
     tech_score = score_technical(tech, config)
-    canslim = score_canslim(fundamentals, tech, config)
-    greenblatt = score_greenblatt(fundamentals, config)
+    canslim = score_canslim_stub()
+    greenblatt = score_greenblatt_stub()
     asym = score_asymmetry(tech, config)
     event_phase = assess_event_cascade_stub()
 
@@ -678,7 +503,7 @@ def evaluate_opportunity(
 
     position_size = calculators.kelly_position_size(
         win_prob=confidence / 100.0,
-        avg_win=0.25 if tier == Tier.MODERATE else 0.50,
+        avg_win=config.moderate_tier.profit_target if tier == Tier.MODERATE else 0.50,
         avg_loss=config.moderate_tier.stop_loss if tier == Tier.MODERATE else 0.12,
         fraction_multiplier=kelly_frac,
         available_capital=available_capital,
@@ -764,7 +589,6 @@ def generate_plan(
     config: SystemConfig,
     cycle_score: int = 0,
     *,
-    fundamentals_map: dict[str, FundamentalData] | None = None,
     alpha_definitions: list[SignalDefinition] | None = None,
     alpha_cache: SignalCache | None = None,
     trade_type_resolver=None,
@@ -775,7 +599,6 @@ def generate_plan(
     """
     signals: list[Signal] = []
     held_symbols = {p.symbol for p in managed_positions}
-    fund_map = fundamentals_map or {}
 
     def _resolve_types(symbol: str) -> set[str] | None:
         if trade_type_resolver is not None:
@@ -822,7 +645,6 @@ def generate_plan(
 
             signal = evaluate_opportunity(
                 symbol, tech, tier, remaining, config,
-                fundamentals=fund_map.get(symbol),
                 symbol_types=_resolve_types(symbol),
                 alpha_definitions=alpha_definitions,
                 alpha_cache=alpha_cache,
