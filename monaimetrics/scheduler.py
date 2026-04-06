@@ -1,22 +1,29 @@
 """
 Strategic trading scheduler.
 
-Jobs:
-  1. Assessment (twice daily, market hours)
-     Fetches VIX for cycle scoring, scans the live Alpaca universe,
-     evaluates through the full strategy stack, executes or queues.
+Two jobs:
 
-  2. Stop check (every 15 minutes)
-     Lightweight price-only scan. Stop-loss sells fire immediately.
+  1. Assessment (hourly, market hours)
+     Runs every hour on the :45 mark, from 09:45 through 15:45 ET, Mon–Fri.
+     Fetches the live Alpaca universe of tradeable US equities, evaluates
+     every symbol through the full strategy stack (stage analysis, Kelly
+     sizing, cycle positioning, risk tier allocation), then executes any
+     signals that meet the rules (buy, sell, reduce).
 
-  3. Approved trade execution (every 2 minutes)
-     Polls the review queue and executes approved signals.
+  2. Stop check (every STOP_CHECK_INTERVAL_MINUTES, default 15)
+     Lightweight price-only scan of current positions.
+     Fires stop-loss and trailing-stop sells immediately — does not wait
+     for the next full assessment.
 
-  4. Daily digest (16:05 ET)
-     Summarises the day's activity in the journal and sends notification.
+Both jobs skip weekends and outside 09:30–16:00 ET.
+Both respect DRY_RUN — no orders are submitted while dry run is active.
 
-All jobs skip weekends and outside 09:30-16:00 ET (except digest at close).
-All respect DRY_RUN — no orders submitted while dry run is active.
+Environment variables:
+  STOP_CHECK_INTERVAL_MINUTES  Stop-loss check frequency (default: 15)
+  SCAN_UNIVERSE_LIMIT          Max symbols per assessment cycle (default: 150)
+  DRY_RUN                      "true" to observe only (default: "true")
+  MAX_SHARE_PRICE_USD          Skip stocks above this price per share (default: 25.0)
+  RISK_PROFILE                 Risk profile for the scheduler (default: "moderate")
 """
 
 from __future__ import annotations
@@ -33,11 +40,6 @@ log = logging.getLogger(__name__)
 ET = pytz.timezone("America/New_York")
 
 STOP_CHECK_INTERVAL = int(os.environ.get("STOP_CHECK_INTERVAL_MINUTES", "15"))
-
-ASSESSMENT_TIMES = [
-    {"hour": 9,  "minute": 45},
-    {"hour": 14, "minute": 0},
-]
 
 
 def _is_market_open() -> bool:
@@ -71,6 +73,7 @@ def run_assessment_job() -> None:
         log.debug("Scheduler: market closed, skipping assessment")
         return
 
+    from monaimetrics.config import load_config_from_env
     from monaimetrics.data_input import AlpacaClients, get_tradeable_assets
     from monaimetrics.portfolio_manager import PortfolioManager
     from monaimetrics import review_queue
@@ -81,7 +84,7 @@ def run_assessment_job() -> None:
     )
 
     try:
-        config, rt = _load_runtime_config()
+        config = load_config_from_env()
         clients = AlpacaClients(config.api)
         mode = "DRY RUN" if config.dry_run else "LIVE"
 
@@ -91,10 +94,8 @@ def run_assessment_job() -> None:
 
         universe = get_tradeable_assets(clients, limit=rt.scan_universe_limit)
         log.info(
-            "Scheduler [%s]: assessment starting — %d symbols, VIX≈%s, cycle=%d",
-            mode, len(universe),
-            f"{vix:.1f}" if vix else "N/A",
-            cycle_score,
+            "Scheduler [%s]: assessment starting — %d symbols in universe (profile=%s)",
+            mode, len(universe), config.profile.value,
         )
 
         pm = PortfolioManager(config, clients, restore_state=True)
@@ -199,11 +200,12 @@ def run_stop_check_job() -> None:
     if not _is_market_open():
         return
 
+    from monaimetrics.config import load_config_from_env
     from monaimetrics.data_input import AlpacaClients
     from monaimetrics.portfolio_manager import PortfolioManager
 
     try:
-        config, _rt = _load_runtime_config()
+        config = load_config_from_env()
         clients = AlpacaClients(config.api)
         pm = PortfolioManager(config, clients, restore_state=True)
         records = pm.run_stop_check()
@@ -329,22 +331,21 @@ def start(run_assessment: bool = True, run_stops: bool = True) -> None:
     )
 
     if run_assessment:
-        for i, t in enumerate(ASSESSMENT_TIMES):
-            scheduler.add_job(
-                run_assessment_job,
-                trigger=CronTrigger(
-                    day_of_week="mon-fri",
-                    hour=t["hour"],
-                    minute=t["minute"],
-                    timezone=ET,
-                ),
-                id=f"assessment_{i}",
-                name=f"Assessment at {t['hour']:02d}:{t['minute']:02d} ET",
-                replace_existing=True,
-                misfire_grace_time=300,
-            )
-        times_str = ", ".join(f"{t['hour']:02d}:{t['minute']:02d}" for t in ASSESSMENT_TIMES)
-        log.info("Scheduler: assessment registered at %s ET (Mon-Fri)", times_str)
+        # Hourly assessment: every hour at :45, from 09:45 through 15:45 ET (Mon–Fri)
+        scheduler.add_job(
+            run_assessment_job,
+            trigger=CronTrigger(
+                day_of_week="mon-fri",
+                hour="9-15",
+                minute=45,
+                timezone=ET,
+            ),
+            id="assessment_hourly",
+            name="Assessment (hourly :45 ET, 09:45–15:45)",
+            replace_existing=True,
+            misfire_grace_time=300,
+        )
+        log.info("Scheduler: hourly assessment registered at :45 ET (09:45–15:45, Mon–Fri)")
 
     if run_stops:
         scheduler.add_job(
@@ -385,7 +386,6 @@ def start(run_assessment: bool = True, run_stops: bool = True) -> None:
 
     scheduler.start()
     log.info(
-        "Scheduler: running — assessments 2x/day, stops every %dm, "
-        "digest at close",
-        STOP_CHECK_INTERVAL,
+        "Scheduler: running — hourly assessments (:45 ET, 09:45–15:45), stop checks every %dm, universe cap %d",
+        STOP_CHECK_INTERVAL, SCAN_UNIVERSE_LIMIT,
     )

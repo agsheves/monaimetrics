@@ -131,6 +131,37 @@
 </div>
 {% endif %}
 
+{% if data.skipped_signals %}
+<details class="card skipped-card">
+    <summary class="skipped-summary">
+        Filtered Out — Skipped ({{ data.skipped_signals|length }})
+        <span class="skipped-hint">click to expand</span>
+    </summary>
+    <div class="table-wrap" style="margin-top:0.75rem;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Price</th>
+                    <th>Action</th>
+                    <th>Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for s in data.skipped_signals %}
+                <tr class="skipped-row">
+                    <td><strong>{{ s.symbol }}</strong></td>
+                    <td>${{ s.price }}</td>
+                    <td><span class="badge badge-action-{{ s.action|lower }}">{{ s.action }}</span></td>
+                    <td class="text-muted small">{{ s.reasons|first }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</details>
+{% endif %}
+
 <div class="card">
     <div class="card-title">Scanned Universe</div>
     <div class="symbol-chips">

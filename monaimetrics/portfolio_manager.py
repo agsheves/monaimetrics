@@ -19,13 +19,13 @@ from monaimetrics.data_input import (
 )
 from monaimetrics.strategy import (
     ManagedPosition, Signal, TradingPlan,
-    review_position, evaluate_opportunity, update_trailing_stop,
+    review_position, evaluate_opportunity,
     generate_plan,
 )
 from monaimetrics.trading_interface import (
     OrderRequest, OrderResult,
-    submit_order, place_stop_order, cancel_order, get_open_orders,
-    cancel_all_orders,
+    submit_order, submit_bracket_buy, place_stop_order, cancel_order,
+    get_open_orders, cancel_all_orders,
 )
 from monaimetrics import calculators
 from monaimetrics import trade_journal
@@ -267,7 +267,6 @@ class PortfolioManager:
                 price = get_latest_price(pos.symbol, self.clients)
                 if price > 0:
                     pos.current_price = price
-                    pos.highest_price = max(pos.highest_price, price)
             except Exception as e:
                 log.warning("Price fetch failed for %s: %s", pos.symbol, e)
 
@@ -349,34 +348,6 @@ class PortfolioManager:
 
         return self.paused
 
-    # ----- Trailing Stop Maintenance -----
-
-    def update_trailing_stops(self):
-        """Recalculate trailing stops for all high-risk positions."""
-        for pos in self.managed_positions:
-            if pos.tier != Tier.HIGH:
-                continue
-            try:
-                tech = get_technical_data(pos.symbol, days=30, clients=self.clients)
-                new_stop = update_trailing_stop(pos, tech, self.config)
-                if new_stop > pos.trailing_stop:
-                    pos.trailing_stop = new_stop
-                    old_id = self.stop_order_ids.get(pos.symbol, "")
-                    if old_id and not self.config.dry_run:
-                        cancel_order(old_id, self.config, self.clients)
-                    result = place_stop_order(
-                        pos.symbol, pos.qty, new_stop,
-                        self.config, clients=self.clients,
-                    )
-                    if result.order_id:
-                        self.stop_order_ids[pos.symbol] = result.order_id
-                    log.info(
-                        "Trailing stop updated %s: %.2f → %.2f",
-                        pos.symbol, pos.trailing_stop, new_stop,
-                    )
-            except Exception as e:
-                log.warning("Trailing stop update failed for %s: %s", pos.symbol, e)
-
     # ----- Execute Signals -----
 
     def _execute_buy(self, signal: Signal) -> OrderResult:
@@ -386,6 +357,24 @@ class PortfolioManager:
                 qty=0, status="rejected", message="Zero position size",
             )
 
+        # Cash reserve check — never deploy more than (1 - cash_reserve_pct) of cash
+        try:
+            account = get_account(self.clients)
+            total_cash = float(account.cash)
+            reserve = total_cash * self.config.cash_reserve_pct
+            spendable = total_cash - reserve
+            if spendable < signal.position_size_usd:
+                return OrderResult(
+                    order_id="", symbol=signal.symbol, side="buy",
+                    qty=0, status="rejected",
+                    message=(
+                        f"Cash reserve: ${total_cash:.0f} total, "
+                        f"${reserve:.0f} held in reserve, "
+                        f"${spendable:.0f} spendable < ${signal.position_size_usd:.0f} needed"
+                    ),
+                )
+        except Exception as e:
+            log.warning("Could not check cash reserve for %s: %s", signal.symbol, e)
         # Enforce runtime position limits (min/max USD per trade)
         from monaimetrics import runtime_settings
         rt = runtime_settings.load()
@@ -425,9 +414,20 @@ class PortfolioManager:
                 qty=0, status="rejected", message="Size below 1 share",
             )
 
-        result = submit_order(
-            OrderRequest(symbol=signal.symbol, side="buy", qty=qty),
-            self.config, self.clients,
+        # Cancel any existing stop order for this symbol before buying to avoid
+        # "potential wash trade" rejections from Alpaca.
+        old_stop_id = self.stop_order_ids.pop(signal.symbol, "")
+        if old_stop_id and not self.config.dry_run:
+            cancel_order(old_stop_id, self.config, self.clients)
+
+        # Submit as a bracket order (buy + embedded stop-loss in one request).
+        # Falls back to plain buy + separate stop if the bracket is rejected.
+        target = signal.target_price if signal.target_price > 0 else None
+        result, stop_order_id, bracket_used = submit_bracket_buy(
+            signal.symbol, qty, signal.stop_price,
+            config=self.config,
+            target_price=target,
+            clients=self.clients,
         )
 
         if result.status in ("accepted", "filled", "dry_run"):
@@ -440,23 +440,31 @@ class PortfolioManager:
                 entry_date=datetime.now(timezone.utc),
                 stop_price=signal.stop_price,
                 target_price=signal.target_price,
-                trailing_stop=signal.stop_price if signal.tier == Tier.HIGH else 0.0,
-                highest_price=entry,
                 current_price=entry,
+                bracket_position=bracket_used,
             )
             self.managed_positions.append(pos)
 
-            # Place broker-side stop
-            stop_result = place_stop_order(
-                signal.symbol, qty, signal.stop_price,
-                self.config, clients=self.clients,
-            )
-            if stop_result.order_id:
-                self.stop_order_ids[signal.symbol] = stop_result.order_id
+            if stop_order_id:
+                # Got the stop-loss leg ID from the bracket — track it for
+                # later cancel/update (e.g. breakeven lock).
+                self.stop_order_ids[signal.symbol] = stop_order_id
+            elif not bracket_used:
+                # Bracket was rejected and we fell back to a plain market buy;
+                # place a separate stop-loss now.
+                stop_result = place_stop_order(
+                    signal.symbol, qty, signal.stop_price,
+                    self.config, clients=self.clients,
+                )
+                if stop_result.order_id:
+                    self.stop_order_ids[signal.symbol] = stop_result.order_id
+            # else: bracket accepted but no leg ID yet (pending fill) — the
+            # stop is broker-managed; do NOT create a second stop order.
 
             log.info(
-                "BUY %s %d shares @ %.2f (%s tier, stop=%.2f)",
-                signal.symbol, qty, entry, signal.tier.value, signal.stop_price,
+                "BUY %s %d shares @ %.2f (%s tier, stop=%.2f, bracket=%s)",
+                signal.symbol, qty, entry, signal.tier.value,
+                signal.stop_price, bracket_used,
             )
 
             # Journal + notification + tracker
@@ -635,7 +643,6 @@ class PortfolioManager:
         # 1. Sync
         self.sync_positions()
         self.update_weeks_held()
-        self.update_trailing_stops()
 
         # 2. Circuit breakers
         self.check_circuit_breakers()
@@ -720,7 +727,55 @@ class PortfolioManager:
         records = []
 
         for pos in list(self.managed_positions):
-            # Fixed stop
+            # Ratchet trailing stop: raise stop one 5% step for each 5% gain above entry.
+            # Stateless — computed from entry_price and current_price only.
+            # Updates both stop_price in memory and the broker-side stop order.
+            if pos.entry_price > 0 and pos.current_price > pos.entry_price:
+                ratchet_level = calculators.ratchet_stop_level(
+                    pos.entry_price, pos.current_price, self.config.ratchet_step_pct
+                )
+                if ratchet_level is not None and ratchet_level > pos.stop_price:
+                    old_id = self.stop_order_ids.get(pos.symbol, "")
+
+                    # For bracket positions without a tracked stop ID, scan open
+                    # orders to find and cancel the broker-side stop leg.
+                    # Filter by order_type=="stop" or "stop_limit" to avoid
+                    # accidentally cancelling a take-profit (limit) leg.
+                    if not old_id and pos.bracket_position and not self.config.dry_run:
+                        try:
+                            for open_ord in get_open_orders(self.clients):
+                                if (
+                                    open_ord.symbol == pos.symbol
+                                    and open_ord.side == "sell"
+                                    and open_ord.order_id
+                                    and open_ord.order_type in ("stop", "stop_limit")
+                                ):
+                                    old_id = open_ord.order_id
+                                    break
+                        except Exception as e:
+                            log.warning(
+                                "Ratchet: could not query open orders for %s: %s",
+                                pos.symbol, e,
+                            )
+
+                    if old_id and not self.config.dry_run:
+                        cancel_order(old_id, self.config, self.clients)
+                        self.stop_order_ids.pop(pos.symbol, None)
+
+                    stop_result = place_stop_order(
+                        pos.symbol, pos.qty, ratchet_level,
+                        self.config, clients=self.clients,
+                    )
+                    if stop_result.order_id:
+                        self.stop_order_ids[pos.symbol] = stop_result.order_id
+                    log.info(
+                        "Ratchet: %s stop raised $%.4f → $%.4f (entry=$%.4f, step=%.0f%%)",
+                        pos.symbol, pos.stop_price, ratchet_level, pos.entry_price,
+                        self.config.ratchet_step_pct * 100,
+                    )
+                    pos.stop_price = ratchet_level
+
+            # Fixed stop (covers ratcheted stop too — stop_price was updated above)
             if pos.current_price <= pos.stop_price:
                 signal = Signal(
                     symbol=pos.symbol,
@@ -736,24 +791,6 @@ class PortfolioManager:
                     signal=signal, order_result=result,
                 ))
                 continue
-
-            # Trailing stop (high-risk)
-            if pos.tier == Tier.HIGH and pos.trailing_stop > 0:
-                if pos.current_price <= pos.trailing_stop:
-                    signal = Signal(
-                        symbol=pos.symbol,
-                        action=SignalType.SELL,
-                        urgency=SignalUrgency.EMERGENCY,
-                        tier=pos.tier,
-                        confidence=100,
-                        reasons=[f"Trailing stop hit: {pos.current_price:.2f} <= {pos.trailing_stop:.2f}"],
-                    )
-                    result = self._execute_sell(signal)
-                    records.append(ExecutionRecord(
-                        timestamp=datetime.now(timezone.utc),
-                        signal=signal, order_result=result,
-                    ))
-                    continue
 
             # Profit target (moderate)
             if pos.tier == Tier.MODERATE and pos.target_price > 0:

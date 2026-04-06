@@ -1,0 +1,59 @@
+{
+  "generated_at": "2026-03-21T00:08:45.277519+00:00",
+  "session": "evening",
+  "vix": null,
+  "cycle_score": 0,
+  "universe_size": 200,
+  "signal_count": 3,
+  "buys": 3,
+  "sells": 0,
+  "reduces": 0,
+  "signals": [
+    {
+      "symbol": "DVY",
+      "action": "BUY",
+      "tier": "moderate",
+      "confidence": 57,
+      "position_size_usd": 6500.0,
+      "stop_price": 134.25560000000002,
+      "target_price": 183.51875,
+      "reasons": [
+        "Stage 2 (advancing) confirmed \u2014 price trending above rising 150-day MA",
+        "Conviction 57/100 (technical:75, growth:50, value:50)",
+        "Position: $6,500, stop-loss at $134.26",
+        "Profit target: $183.52"
+      ]
+    },
+    {
+      "symbol": "EXE",
+      "action": "BUY",
+      "tier": "moderate",
+      "confidence": 63,
+      "position_size_usd": 6500.0,
+      "stop_price": 98.71600000000001,
+      "target_price": 135.7567857142857,
+      "reasons": [
+        "Stage 2 (advancing) confirmed \u2014 price trending above rising 150-day MA",
+        "Conviction 63/100 (technical:75, growth:45, value:78)",
+        "Position: $6,500, stop-loss at $98.72",
+        "Profit target: $135.76"
+      ]
+    },
+    {
+      "symbol": "BBCA",
+      "action": "BUY",
+      "tier": "moderate",
+      "confidence": 57,
+      "position_size_usd": 6500.0,
+      "stop_price": 84.2076,
+      "target_price": 115.26857142857143,
+      "reasons": [
+        "Stage 2 (advancing) confirmed \u2014 price trending above rising 150-day MA",
+        "Conviction 57/100 (technical:75, growth:50, value:50)",
+        "Position: $6,500, stop-loss at $84.21",
+        "Profit target: $115.27"
+      ]
+    }
+  ],
+  "disclaimer": "These are planned trades based on current data. Actual trades may differ when markets open due to live prices, volume, and changing conditions."
+}

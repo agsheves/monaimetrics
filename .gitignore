@@ -11,4 +11,4 @@ dist/
 build/
 .venv/
 .pythonlibs/
-.uv/
+user_config.yaml

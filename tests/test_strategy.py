@@ -17,7 +17,6 @@ from monaimetrics.strategy import (
     score_asymmetry,
     compute_composite_confidence,
     review_position,
-    update_trailing_stop,
     evaluate_opportunity,
     generate_plan,
 )
@@ -50,8 +49,6 @@ def make_position(
     current_price=110.0,
     stop_price=92.0,
     target_price=125.0,
-    trailing_stop=0.0,
-    highest_price=110.0,
     weeks_held=2,
     qty=10.0,
 ) -> ManagedPosition:
@@ -59,7 +56,6 @@ def make_position(
         symbol=symbol, tier=tier, qty=qty, entry_price=entry_price,
         entry_date=NOW - timedelta(weeks=weeks_held),
         stop_price=stop_price, target_price=target_price,
-        trailing_stop=trailing_stop, highest_price=highest_price,
         current_price=current_price, weeks_held=weeks_held,
     )
 
@@ -143,27 +139,6 @@ class TestStopLoss:
         assert sig.action == SignalType.HOLD
 
 
-class TestTrailingStop:
-    def test_trailing_triggered(self):
-        pos = make_position(
-            tier=Tier.HIGH, current_price=108.0,
-            trailing_stop=110.0, stop_price=85.0,
-        )
-        tech = make_tech(price=108.0, stage=2)
-        sig = review_position(pos, tech, 50000, CFG)
-        assert sig.action == SignalType.SELL
-        assert sig.urgency == SignalUrgency.EMERGENCY
-
-    def test_trailing_not_triggered(self):
-        pos = make_position(
-            tier=Tier.HIGH, current_price=115.0,
-            trailing_stop=110.0, stop_price=85.0,
-        )
-        tech = make_tech(price=115.0, stage=2)
-        sig = review_position(pos, tech, 50000, CFG)
-        assert sig.action == SignalType.HOLD
-
-
 class TestProfitTarget:
     def test_target_hit(self):
         pos = make_position(current_price=126.0, target_price=125.0)
@@ -221,8 +196,7 @@ class TestConcentration:
         # High-risk tier with no profit target, so concentration is the trigger
         pos = make_position(
             tier=Tier.HIGH, entry_price=100.0, current_price=110.0,
-            stop_price=85.0, target_price=0.0, trailing_stop=95.0,
-            highest_price=110.0, qty=100,
+            stop_price=85.0, target_price=0.0, qty=100,
         )
         tech = make_tech(price=110.0, stage=2)
         sig = review_position(pos, tech, 50000, CFG)
@@ -245,46 +219,6 @@ class TestConflictResolution:
         sig = review_position(pos, tech, 50000, CFG)
         assert sig.urgency == SignalUrgency.EMERGENCY
         assert "Stage 4" in sig.reasons[0]
-
-
-# ---------------------------------------------------------------------------
-# Trailing Stop Update Tests
-# ---------------------------------------------------------------------------
-
-class TestUpdateTrailingStop:
-    def test_moves_up(self):
-        pos = make_position(
-            tier=Tier.HIGH, entry_price=100.0, current_price=120.0,
-            highest_price=120.0, trailing_stop=95.0,
-        )
-        tech = make_tech(price=120.0, atr_14=3.0, stage=2)
-        new_stop = update_trailing_stop(pos, tech, CFG)
-        assert new_stop >= 100.0
-
-    def test_never_moves_down(self):
-        pos = make_position(
-            tier=Tier.HIGH, entry_price=100.0, current_price=105.0,
-            highest_price=120.0, trailing_stop=115.0,
-        )
-        tech = make_tech(price=105.0, atr_14=3.0, stage=2)
-        new_stop = update_trailing_stop(pos, tech, CFG)
-        assert new_stop >= 115.0
-
-    def test_stage3_tightens(self):
-        pos = make_position(
-            tier=Tier.HIGH, entry_price=100.0, current_price=160.0,
-            highest_price=160.0, trailing_stop=130.0,
-        )
-        tech_s2 = make_tech(price=160.0, atr_14=3.0, stage=2)
-        tech_s3 = make_tech(price=160.0, atr_14=3.0, stage=3)
-        stop_s2 = update_trailing_stop(pos, tech_s2, CFG)
-        stop_s3 = update_trailing_stop(pos, tech_s3, CFG)
-        assert stop_s3 >= stop_s2
-
-    def test_moderate_tier_unchanged(self):
-        pos = make_position(tier=Tier.MODERATE, trailing_stop=95.0)
-        tech = make_tech(price=110.0, stage=2)
-        assert update_trailing_stop(pos, tech, CFG) == 95.0
 
 
 # ---------------------------------------------------------------------------

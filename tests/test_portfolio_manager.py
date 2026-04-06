@@ -33,8 +33,6 @@ def make_position(
     current_price=110.0,
     stop_price=92.0,
     target_price=125.0,
-    trailing_stop=0.0,
-    highest_price=110.0,
     weeks_held=2,
     qty=10.0,
 ) -> ManagedPosition:
@@ -42,7 +40,6 @@ def make_position(
         symbol=symbol, tier=tier, qty=qty, entry_price=entry_price,
         entry_date=NOW - timedelta(weeks=weeks_held),
         stop_price=stop_price, target_price=target_price,
-        trailing_stop=trailing_stop, highest_price=highest_price,
         current_price=current_price, weeks_held=weeks_held,
     )
 

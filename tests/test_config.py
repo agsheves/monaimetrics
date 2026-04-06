@@ -94,11 +94,14 @@ class TestLoadConfig:
         w = cfg.get_framework_weights(Tier.MODERATE)
         assert w.canslim == 0.40
 
-    def test_high_risk_milestones_ascending(self):
+    def test_ratchet_step_default(self):
         cfg = load_config()
-        ms = cfg.high_risk_tier.milestones
-        thresholds = [m.gain_threshold for m in ms]
-        assert thresholds == sorted(thresholds)
+        assert cfg.ratchet_step_pct == pytest.approx(0.05)
+
+    def test_ratchet_step_env_override(self, monkeypatch):
+        monkeypatch.setenv("RATCHET_STEP", "0.10")
+        cfg = load_config()
+        assert cfg.ratchet_step_pct == pytest.approx(0.10)
 
     def test_kelly_fractions_increase_with_risk(self):
         con = load_config(RiskProfile.CONSERVATIVE)

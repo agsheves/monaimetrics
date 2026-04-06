@@ -33,11 +33,10 @@ class ManagedPosition:
     entry_date: datetime
     stop_price: float
     target_price: float
-    trailing_stop: float
-    highest_price: float
     current_price: float
     weeks_held: int = 0
     frameworks_at_entry: dict[str, float] = field(default_factory=dict)
+    bracket_position: bool = False   # True when bought via bracket order (stop is broker-managed)
 
 
 @dataclass
@@ -303,25 +302,6 @@ def _check_stop_loss(pos: ManagedPosition) -> Signal | None:
     return None
 
 
-def _check_trailing_stop(pos: ManagedPosition) -> Signal | None:
-    if pos.tier != Tier.HIGH:
-        return None
-    if pos.trailing_stop > 0 and pos.current_price <= pos.trailing_stop:
-        return Signal(
-            symbol=pos.symbol,
-            action=SignalType.SELL,
-            urgency=SignalUrgency.EMERGENCY,
-            tier=pos.tier,
-            confidence=100,
-            reasons=[
-                f"Trailing stop triggered: price ${pos.current_price:.2f} "
-                f"pulled back below our raised stop at ${pos.trailing_stop:.2f} "
-                f"— locking in gains",
-            ],
-        )
-    return None
-
-
 def _check_profit_target(pos: ManagedPosition) -> Signal | None:
     if pos.tier != Tier.MODERATE:
         return None
@@ -449,7 +429,6 @@ def review_position(
     checks = [
         _check_stage4(pos, tech),
         _check_stop_loss(pos),
-        _check_trailing_stop(pos),
         _check_profit_target(pos),
         _check_non_performance(pos, config),
         _check_max_hold(pos, config),
@@ -506,38 +485,6 @@ def review_position(
 
 
 # ---------------------------------------------------------------------------
-# Trailing Stop Maintenance
-# ---------------------------------------------------------------------------
-
-def update_trailing_stop(
-    pos: ManagedPosition,
-    tech: TechnicalData,
-    config: SystemConfig,
-) -> float:
-    """Calculate updated trailing stop for a high-risk position."""
-    if pos.tier != Tier.HIGH:
-        return pos.trailing_stop
-
-    hr = config.high_risk_tier
-    milestones = [(m.gain_threshold, m.lock_gain) for m in hr.milestones]
-
-    highest = max(pos.highest_price, pos.current_price)
-
-    atr_mult = hr.mature_trail_atr_multiplier
-    if tech.stage == Stage.TOPPING.value:
-        atr_mult = hr.stage3_tighten_atr_multiplier
-
-    return calculators.trailing_stop_update(
-        current_stop=pos.trailing_stop,
-        highest_price=highest,
-        entry_price=pos.entry_price,
-        milestones=milestones,
-        atr=tech.atr_14,
-        mature_atr_multiplier=atr_mult,
-    )
-
-
-# ---------------------------------------------------------------------------
 # Opportunity Scan (buy-side)
 # ---------------------------------------------------------------------------
 
@@ -576,6 +523,20 @@ def evaluate_opportunity(
     Evaluate a stock for a potential buy. Runs through framework gates and scoring.
     """
     reasons = []
+
+    # Gate 0: Share price cap — skip stocks above the per-share limit
+    if config.max_share_price_usd > 0 and tech.price > config.max_share_price_usd:
+        return Signal(
+            symbol=symbol,
+            action=SignalType.WATCH,
+            urgency=SignalUrgency.MONITOR,
+            tier=tier,
+            confidence=0,
+            reasons=[
+                f"Share price ${tech.price:.2f} exceeds cap of "
+                f"${config.max_share_price_usd:.2f} — skipping"
+            ],
+        )
 
     # Gate 1: Stage must be 2 (advancing)
     stage = assess_stage(tech)
@@ -678,7 +639,7 @@ def evaluate_opportunity(
 
     position_size = calculators.kelly_position_size(
         win_prob=confidence / 100.0,
-        avg_win=0.25 if tier == Tier.MODERATE else 0.50,
+        avg_win=config.moderate_tier.profit_target if tier == Tier.MODERATE else 0.50,
         avg_loss=config.moderate_tier.stop_loss if tier == Tier.MODERATE else 0.12,
         fraction_multiplier=kelly_frac,
         available_capital=available_capital,

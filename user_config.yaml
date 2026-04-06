@@ -1,0 +1,24 @@
+# Configure these settings to adapt Monaimetrics to suit your own personal trading style
+# and to toggle from paper trading to live.
+# Secrets (API keys, passwords) stay in Replit app secrets — only non-confidential settings live here.
+
+# --- Trading mode ---
+ALPACA_PAPER=false   # Set to false to use live Alpaca account
+DRY_RUN=false        # Set to false to submit real orders
+
+# --- Position sizing ---
+MAX_SHARE_PRICE_USD=25.0  # Skip stocks with a share price above this (e.g. 25.0 = only buy stocks under $25/share)
+CASH_RESERVE_PCT=0.20     # Fraction of cash to keep undeployed (0.20 = keep 20% as reserve; 80% can be deployed)
+
+# --- Universe ---
+SCAN_UNIVERSE_LIMIT=200  # Max number of stocks to scan per assessment cycle
+
+# --- Strategy (fast compounding) ---
+PROFIT_TARGET=0.15  # Profit target as a decimal (0.15 = 15%); overrides profile default for moderate tier
+STOP_LOSS=0.06      # Stop-loss as a decimal (0.06 = 6%); overrides profile default for moderate tier
+
+# --- Risk profile ---
+RISK_PROFILE=aggressive  # Risk profile used by the automated scheduler: conservative, moderate, or aggressive
+
+# --- Trailing stop ---
+RATCHET_STEP=0.05  # Step size for the ratchet trailing stop (0.05 = 5%); stop moves up each time price clears a new 5% milestone above entry

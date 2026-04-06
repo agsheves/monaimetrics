@@ -134,14 +134,13 @@ def get_symbol_data(symbol: str, risk_profile: str = "moderate") -> dict:
             config=config,
             fundamentals=fund,
         )
-        capped_size = max(config.min_position_usd, min(sig.position_size_usd, config.max_position_usd))
         signal = {
             "action": sig.action.value.upper(),
             "tier": sig.tier.value,
             "confidence": sig.confidence,
             "urgency": sig.urgency.value,
             "reasons": sig.reasons,
-            "position_size_usd": round(capped_size, 2),
+            "position_size_usd": round(sig.position_size_usd, 2),
             "stop_price": round(sig.stop_price, 2) if sig.stop_price else None,
             "target_price": round(sig.target_price, 2) if sig.target_price else None,
         }
@@ -186,9 +185,9 @@ def scan_for_opportunities(
     try:
         account = get_account(clients)
     except Exception as e:
-        return {"error": str(e), "buy_signals": [], "other_signals": [], "scan_errors": [],
-                "scanned": [], "limit_usd": config.max_position_usd, "universe_size": 0,
-                "profile": profile.value}
+        return {"error": str(e), "buy_signals": [], "other_signals": [], "skipped_signals": [],
+                "scan_errors": [], "scanned": [], "limit_usd": config.max_share_price_usd,
+                "universe_size": 0, "profile": profile.value}
 
     if symbols:
         watchlist = symbols
@@ -222,7 +221,6 @@ def scan_for_opportunities(
             if signal is None:
                 continue
 
-            capped_size = min(signal.position_size_usd, config.max_position_usd)
             results.append({
                 "symbol": sym,
                 "action": signal.action.value.upper(),
@@ -230,7 +228,7 @@ def scan_for_opportunities(
                 "confidence": signal.confidence,
                 "urgency": signal.urgency.value,
                 "reasons": signal.reasons,
-                "position_size_usd": round(capped_size, 2),
+                "position_size_usd": round(signal.position_size_usd, 2),
                 "stop_price": round(signal.stop_price, 2) if signal.stop_price else None,
                 "target_price": round(signal.target_price, 2) if signal.target_price else None,
                 "price": round(tech.price, 2),
@@ -242,18 +240,24 @@ def scan_for_opportunities(
             errors.append({"symbol": sym, "error": str(e)})
             log.warning("Scan failed for %s: %s", sym, e)
 
+    def _is_skipped(r: dict) -> bool:
+        return any("— skipping" in reason for reason in r.get("reasons", []))
+
     buy_signals = [r for r in results if r["action"] == "BUY"]
     buy_signals.sort(key=lambda r: r["confidence"], reverse=True)
-    other_signals = [r for r in results if r["action"] != "BUY"]
+    non_buy = [r for r in results if r["action"] != "BUY"]
+    other_signals = [r for r in non_buy if not _is_skipped(r)]
+    skipped_signals = [r for r in non_buy if _is_skipped(r)]
 
     return {
         "error": None,
         "buy_signals": buy_signals,
         "other_signals": other_signals,
+        "skipped_signals": skipped_signals,
         "scan_errors": errors,
         "scanned": watchlist,
         "universe_size": universe_size,
-        "limit_usd": config.max_position_usd,
+        "limit_usd": config.max_share_price_usd,
         "dry_run": config.dry_run,
         "profile": profile.value,
         "account": {

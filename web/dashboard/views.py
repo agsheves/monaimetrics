@@ -1,6 +1,7 @@
 import os
 import json
 import functools
+import logging
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render, redirect
@@ -8,6 +9,20 @@ from django.views.decorators.http import require_http_methods
 
 from monaimetrics.web_portfolio import get_portfolio_data, get_symbol_data, get_allocation_for_profile, scan_for_opportunities
 from monaimetrics.web_research import ask_research
+from monaimetrics.web_arb import get_arb_dashboard_data
+from monaimetrics.user_config import update_user_config
+
+log = logging.getLogger(__name__)
+
+_VALID_PROFILES = ("conservative", "moderate", "aggressive")
+
+
+def _current_profile() -> str:
+    """Read the active risk profile from the environment (loaded from user_config.yaml).
+    Never falls back to session — the file is the single source of truth."""
+    raw = os.environ.get("RISK_PROFILE", "moderate")
+    val = raw.strip().lower()
+    return val if val in _VALID_PROFILES else "moderate"
 from monaimetrics.web_backtest import run_web_backtest, get_backtest_info
 
 
@@ -51,6 +66,7 @@ def logout_view(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def dashboard_view(request: HttpRequest) -> HttpResponse:
+    profile = _current_profile()
     from monaimetrics import runtime_settings, review_queue, trade_journal, notifications
 
     rt = runtime_settings.load()
@@ -131,6 +147,19 @@ def settings_view(request: HttpRequest) -> HttpResponse:
     from monaimetrics import runtime_settings
 
     if request.method == "POST":
+        profile = request.POST.get("risk_profile", "").strip().lower()
+        if profile in _VALID_PROFILES:
+            try:
+                update_user_config("RISK_PROFILE", profile)
+            except Exception as e:
+                log.warning("Could not persist RISK_PROFILE to user_config.yaml: %s", e)
+
+    profile = _current_profile()
+    allocation_table = get_allocation_for_profile(profile)
+
+    response = render(request, "dashboard/settings.html", {
+        "profile": profile,
+        "profiles": list(_VALID_PROFILES),
         rt = runtime_settings.load()
 
         # Risk profile
@@ -195,6 +224,7 @@ def lookup_view(request: HttpRequest) -> HttpResponse:
     data = None
 
     if symbol:
+        data = get_symbol_data(symbol, _current_profile())
         data = get_symbol_data(symbol, rt.risk_profile)
 
     response = render(request, "dashboard/lookup.html", {"symbol": symbol, "data": data})
@@ -222,6 +252,9 @@ def research_view(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def scan_view(request: HttpRequest) -> HttpResponse:
+    symbols_raw = request.GET.get("symbols", "").strip().upper()
+    symbols = [s.strip() for s in symbols_raw.split(",") if s.strip()] if symbols_raw else None
+    data = scan_for_opportunities(_current_profile(), symbols)
     from monaimetrics import runtime_settings
     rt = runtime_settings.load()
 
