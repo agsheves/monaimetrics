@@ -497,6 +497,8 @@ class PortfolioManager:
 
                     # For bracket positions without a tracked stop ID, scan open
                     # orders to find and cancel the broker-side stop leg.
+                    # Filter by order_type=="stop" or "stop_limit" to avoid
+                    # accidentally cancelling a take-profit (limit) leg.
                     if not old_id and pos.bracket_position and not self.config.dry_run:
                         try:
                             for open_ord in get_open_orders(self.clients):
@@ -504,6 +506,7 @@ class PortfolioManager:
                                     open_ord.symbol == pos.symbol
                                     and open_ord.side == "sell"
                                     and open_ord.order_id
+                                    and open_ord.order_type in ("stop", "stop_limit")
                                 ):
                                     old_id = open_ord.order_id
                                     break

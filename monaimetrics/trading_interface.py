@@ -52,6 +52,7 @@ class OrderResult:
     filled_qty: float = 0.0
     filled_avg_price: float | None = None
     message: str = ""
+    order_type: str = ""  # "market", "limit", "stop", "stop_limit", or ""
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +119,11 @@ def _result_from_alpaca(order) -> OrderResult:
         OrderStatus.CANCELED: "cancelled",
         OrderStatus.REJECTED: "rejected",
     }
+    order_type_str = ""
+    try:
+        order_type_str = order.order_type.value if order.order_type else ""
+    except Exception:
+        pass
     return OrderResult(
         order_id=str(order.id),
         symbol=order.symbol,
@@ -126,6 +132,7 @@ def _result_from_alpaca(order) -> OrderResult:
         status=status_map.get(order.status, str(order.status)),
         filled_qty=float(order.filled_qty) if order.filled_qty else 0.0,
         filled_avg_price=float(order.filled_avg_price) if order.filled_avg_price else None,
+        order_type=order_type_str,
     )
 
 
