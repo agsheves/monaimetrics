@@ -19,3 +19,6 @@ STOP_LOSS=0.06      # Stop-loss as a decimal (0.06 = 6%); overrides profile defa
 
 # --- Risk profile ---
 RISK_PROFILE=moderate  # Risk profile used by the automated scheduler: conservative, moderate, or aggressive
+
+# --- Trailing stop ---
+RATCHET_STEP=0.05  # Step size for the ratchet trailing stop (0.05 = 5%); stop moves up each time price clears a new 5% milestone above entry

@@ -19,7 +19,7 @@ from monaimetrics.data_input import (
 )
 from monaimetrics.strategy import (
     ManagedPosition, Signal, TradingPlan,
-    review_position, evaluate_opportunity, update_trailing_stop,
+    review_position, evaluate_opportunity,
     generate_plan,
 )
 from monaimetrics.trading_interface import (
@@ -126,7 +126,6 @@ class PortfolioManager:
                 price = get_latest_price(pos.symbol, self.clients)
                 if price > 0:
                     pos.current_price = price
-                    pos.highest_price = max(pos.highest_price, price)
             except Exception as e:
                 log.warning("Price fetch failed for %s: %s", pos.symbol, e)
 
@@ -189,34 +188,6 @@ class PortfolioManager:
             return True
 
         return self.paused
-
-    # ----- Trailing Stop Maintenance -----
-
-    def update_trailing_stops(self):
-        """Recalculate trailing stops for all high-risk positions."""
-        for pos in self.managed_positions:
-            if pos.tier != Tier.HIGH:
-                continue
-            try:
-                tech = get_technical_data(pos.symbol, days=30, clients=self.clients)
-                new_stop = update_trailing_stop(pos, tech, self.config)
-                if new_stop > pos.trailing_stop:
-                    pos.trailing_stop = new_stop
-                    old_id = self.stop_order_ids.get(pos.symbol, "")
-                    if old_id and not self.config.dry_run:
-                        cancel_order(old_id, self.config, self.clients)
-                    result = place_stop_order(
-                        pos.symbol, pos.qty, new_stop,
-                        self.config, clients=self.clients,
-                    )
-                    if result.order_id:
-                        self.stop_order_ids[pos.symbol] = result.order_id
-                    log.info(
-                        "Trailing stop updated %s: %.2f → %.2f",
-                        pos.symbol, pos.trailing_stop, new_stop,
-                    )
-            except Exception as e:
-                log.warning("Trailing stop update failed for %s: %s", pos.symbol, e)
 
     # ----- Execute Signals -----
 
@@ -286,8 +257,6 @@ class PortfolioManager:
                 entry_date=datetime.now(timezone.utc),
                 stop_price=signal.stop_price,
                 target_price=signal.target_price,
-                trailing_stop=signal.stop_price if signal.tier == Tier.HIGH else 0.0,
-                highest_price=entry,
                 current_price=entry,
                 bracket_position=bracket_used,
             )
@@ -449,7 +418,6 @@ class PortfolioManager:
         # 1. Sync
         self.sync_positions()
         self.update_weeks_held()
-        self.update_trailing_stops()
 
         # 2. Circuit breakers
         self.check_circuit_breakers()
@@ -516,24 +484,19 @@ class PortfolioManager:
         self.sync_positions()
         records = []
 
-        _BREAKEVEN_LOCK_GAIN = 0.03  # Lock stop at entry + $0.01 once up 3%
-
         for pos in list(self.managed_positions):
-            # Breakeven lock: once up 3%, floor the stop at entry + $0.01 so no
-            # trade can ever lose money after gaining that threshold.
-            if (
-                not pos.breakeven_locked
-                and pos.entry_price > 0
-                and pos.current_price >= pos.entry_price * (1 + _BREAKEVEN_LOCK_GAIN)
-            ):
-                new_floor = round(pos.entry_price + 0.01, 2)
-                if new_floor > pos.stop_price:
+            # Ratchet trailing stop: raise stop one 5% step for each 5% gain above entry.
+            # Stateless — computed from entry_price and current_price only.
+            # Updates both stop_price in memory and the broker-side stop order.
+            if pos.entry_price > 0 and pos.current_price > pos.entry_price:
+                ratchet_level = calculators.ratchet_stop_level(
+                    pos.entry_price, pos.current_price, self.config.ratchet_step_pct
+                )
+                if ratchet_level is not None and ratchet_level > pos.stop_price:
                     old_id = self.stop_order_ids.get(pos.symbol, "")
 
-                    # When a bracket position has no tracked stop ID yet (e.g.
-                    # the bracket was still pending fill when the ID was not
-                    # returned), scan open orders now to find and cancel the
-                    # broker-side stop before we place the new floor.
+                    # For bracket positions without a tracked stop ID, scan open
+                    # orders to find and cancel the broker-side stop leg.
                     if not old_id and pos.bracket_position and not self.config.dry_run:
                         try:
                             for open_ord in get_open_orders(self.clients):
@@ -546,7 +509,7 @@ class PortfolioManager:
                                     break
                         except Exception as e:
                             log.warning(
-                                "Breakeven lock: could not query open orders for %s: %s",
+                                "Ratchet: could not query open orders for %s: %s",
                                 pos.symbol, e,
                             )
 
@@ -555,20 +518,19 @@ class PortfolioManager:
                         self.stop_order_ids.pop(pos.symbol, None)
 
                     stop_result = place_stop_order(
-                        pos.symbol, pos.qty, new_floor,
+                        pos.symbol, pos.qty, ratchet_level,
                         self.config, clients=self.clients,
                     )
                     if stop_result.order_id:
                         self.stop_order_ids[pos.symbol] = stop_result.order_id
-                    pos.stop_price = new_floor
-                pos.breakeven_locked = True
-                log.info(
-                    "Breakeven lock: %s stop floored at %.2f (entry=%.2f, gain=%.1f%%)",
-                    pos.symbol, pos.stop_price, pos.entry_price,
-                    (pos.current_price - pos.entry_price) / pos.entry_price * 100,
-                )
+                    log.info(
+                        "Ratchet: %s stop raised $%.4f → $%.4f (entry=$%.4f, step=%.0f%%)",
+                        pos.symbol, pos.stop_price, ratchet_level, pos.entry_price,
+                        self.config.ratchet_step_pct * 100,
+                    )
+                    pos.stop_price = ratchet_level
 
-            # Fixed stop
+            # Fixed stop (covers ratcheted stop too — stop_price was updated above)
             if pos.current_price <= pos.stop_price:
                 signal = Signal(
                     symbol=pos.symbol,
@@ -584,24 +546,6 @@ class PortfolioManager:
                     signal=signal, order_result=result,
                 ))
                 continue
-
-            # Trailing stop (high-risk)
-            if pos.tier == Tier.HIGH and pos.trailing_stop > 0:
-                if pos.current_price <= pos.trailing_stop:
-                    signal = Signal(
-                        symbol=pos.symbol,
-                        action=SignalType.SELL,
-                        urgency=SignalUrgency.EMERGENCY,
-                        tier=pos.tier,
-                        confidence=100,
-                        reasons=[f"Trailing stop hit: {pos.current_price:.2f} <= {pos.trailing_stop:.2f}"],
-                    )
-                    result = self._execute_sell(signal)
-                    records.append(ExecutionRecord(
-                        timestamp=datetime.now(timezone.utc),
-                        signal=signal, order_result=result,
-                    ))
-                    continue
 
             # Profit target (moderate)
             if pos.tier == Tier.MODERATE and pos.target_price > 0:

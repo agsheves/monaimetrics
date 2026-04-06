@@ -6,6 +6,8 @@ All percentages as decimals (0.25 = 25%).
 
 from __future__ import annotations
 
+import math
+
 
 def normalise_score(value: float | None, floor: float = 0.0, ceiling: float = 100.0) -> float:
     """Clamp a value to the 0-100 score range. None returns 0."""
@@ -54,6 +56,35 @@ def kelly_position_size(
 def stop_loss_price(entry_price: float, stop_pct: float) -> float:
     """Fixed percentage stop-loss. Returns the stop price."""
     return entry_price * (1 - stop_pct)
+
+
+def ratchet_stop_level(
+    entry_price: float,
+    current_price: float,
+    step: float = 0.05,
+) -> float | None:
+    """
+    5%-ratchet trailing stop level (stateless, calculated from entry and current price only).
+
+    Each time price clears a new milestone — entry × (1+step)^n — the stop is
+    locked at the previous milestone: entry × (1+step)^(n-1).
+
+    Example with step=0.05 and entry=$1.00:
+      price=$1.05  → stop=$1.00  (entry × 1.05^0)
+      price=$1.10  → stop=$1.00  (not yet at $1.1025)
+      price=$1.1025 → stop=$1.05 (entry × 1.05^1)
+      price=$1.1576 → stop=$1.05 (not yet at $1.1576...)
+      price=$1.1577 → stop=$1.1025 (entry × 1.05^2)
+
+    Returns the stop price to apply, or None if no milestone has been cleared
+    yet (price has not risen by at least one full step above entry).
+    """
+    if entry_price <= 0 or step <= 0 or current_price <= entry_price:
+        return None
+    steps_cleared = int(math.log(current_price / entry_price) / math.log(1 + step))
+    if steps_cleared < 1:
+        return None
+    return round(entry_price * (1 + step) ** (steps_cleared - 1), 4)
 
 
 def atr_stop_loss_price(

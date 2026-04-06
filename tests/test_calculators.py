@@ -6,6 +6,7 @@ from monaimetrics.calculators import (
     stop_loss_price,
     atr_stop_loss_price,
     trailing_stop_update,
+    ratchet_stop_level,
     profit_target_price,
     portfolio_drift,
     max_drift,
@@ -119,6 +120,42 @@ class TestATRStopLoss:
             max_stop_pct=0.15, min_stop_pct=0.05,
         )
         assert price == pytest.approx(95.0)
+
+
+class TestRatchetStopLevel:
+    def test_no_gain_returns_none(self):
+        assert ratchet_stop_level(1.00, 1.00) is None
+
+    def test_partial_gain_under_step_returns_none(self):
+        assert ratchet_stop_level(1.00, 1.04) is None
+
+    def test_first_milestone_locks_at_entry(self):
+        result = ratchet_stop_level(1.00, 1.05)
+        assert result == pytest.approx(1.00, rel=1e-4)
+
+    def test_between_milestones_stays_at_previous(self):
+        result = ratchet_stop_level(1.00, 1.08)
+        assert result == pytest.approx(1.00, rel=1e-4)
+
+    def test_second_milestone_locks_at_first(self):
+        result = ratchet_stop_level(1.00, 1.103)
+        assert result == pytest.approx(1.05, rel=1e-4)
+
+    def test_third_milestone(self):
+        result = ratchet_stop_level(1.00, 1.158)
+        assert result == pytest.approx(1.1025, rel=1e-3)
+
+    def test_custom_step(self):
+        result = ratchet_stop_level(100.0, 110.0, step=0.10)
+        assert result == pytest.approx(100.0, rel=1e-4)
+
+    def test_below_entry_returns_none(self):
+        assert ratchet_stop_level(1.00, 0.95) is None
+
+    def test_stop_only_moves_up(self):
+        low = ratchet_stop_level(1.00, 1.05)
+        high = ratchet_stop_level(1.00, 1.103)
+        assert high > low
 
 
 class TestTrailingStopUpdate:

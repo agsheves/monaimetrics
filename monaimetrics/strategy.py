@@ -32,12 +32,9 @@ class ManagedPosition:
     entry_date: datetime
     stop_price: float
     target_price: float
-    trailing_stop: float
-    highest_price: float
     current_price: float
     weeks_held: int = 0
     frameworks_at_entry: dict[str, float] = field(default_factory=dict)
-    breakeven_locked: bool = False   # True once stop is floored at entry + $0.01
     bracket_position: bool = False   # True when bought via bracket order (stop is broker-managed)
 
 
@@ -170,25 +167,6 @@ def _check_stop_loss(pos: ManagedPosition) -> Signal | None:
     return None
 
 
-def _check_trailing_stop(pos: ManagedPosition) -> Signal | None:
-    if pos.tier != Tier.HIGH:
-        return None
-    if pos.trailing_stop > 0 and pos.current_price <= pos.trailing_stop:
-        return Signal(
-            symbol=pos.symbol,
-            action=SignalType.SELL,
-            urgency=SignalUrgency.EMERGENCY,
-            tier=pos.tier,
-            confidence=100,
-            reasons=[
-                f"Trailing stop triggered: price ${pos.current_price:.2f} "
-                f"pulled back below our raised stop at ${pos.trailing_stop:.2f} "
-                f"— locking in gains",
-            ],
-        )
-    return None
-
-
 def _check_profit_target(pos: ManagedPosition) -> Signal | None:
     if pos.tier != Tier.MODERATE:
         return None
@@ -316,7 +294,6 @@ def review_position(
     checks = [
         _check_stage4(pos, tech),
         _check_stop_loss(pos),
-        _check_trailing_stop(pos),
         _check_profit_target(pos),
         _check_non_performance(pos, config),
         _check_max_hold(pos, config),
@@ -370,38 +347,6 @@ def review_position(
             f"+ {len(sell_signals) - 1} other sell trigger(s)"
         )
     return winner
-
-
-# ---------------------------------------------------------------------------
-# Trailing Stop Maintenance
-# ---------------------------------------------------------------------------
-
-def update_trailing_stop(
-    pos: ManagedPosition,
-    tech: TechnicalData,
-    config: SystemConfig,
-) -> float:
-    """Calculate updated trailing stop for a high-risk position."""
-    if pos.tier != Tier.HIGH:
-        return pos.trailing_stop
-
-    hr = config.high_risk_tier
-    milestones = [(m.gain_threshold, m.lock_gain) for m in hr.milestones]
-
-    highest = max(pos.highest_price, pos.current_price)
-
-    atr_mult = hr.mature_trail_atr_multiplier
-    if tech.stage == Stage.TOPPING.value:
-        atr_mult = hr.stage3_tighten_atr_multiplier
-
-    return calculators.trailing_stop_update(
-        current_stop=pos.trailing_stop,
-        highest_price=highest,
-        entry_price=pos.entry_price,
-        milestones=milestones,
-        atr=tech.atr_14,
-        mature_atr_multiplier=atr_mult,
-    )
 
 
 # ---------------------------------------------------------------------------

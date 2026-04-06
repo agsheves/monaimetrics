@@ -181,24 +181,11 @@ class ModerateTierConfig:
 
 
 @dataclass
-class TrailingStopMilestone:
-    gain_threshold: float
-    lock_gain: float
-
-
-@dataclass
 class HighRiskTierConfig:
     atr_stop_multiplier: float = 2.5
     atr_period_days: int = 14
     max_stop: float = 0.15
     min_stop: float = 0.05
-    milestones: tuple[TrailingStopMilestone, ...] = (
-        TrailingStopMilestone(0.15, 0.0),
-        TrailingStopMilestone(0.30, 0.15),
-        TrailingStopMilestone(0.50, 0.30),
-    )
-    mature_trail_atr_multiplier: float = 1.75
-    stage3_tighten_atr_multiplier: float = 1.0
     non_perf_review_weeks: int = 6
     non_perf_gain_threshold: float = 0.08
     max_hold_weeks: int = 10
@@ -396,6 +383,7 @@ class SystemConfig:
     dry_run: bool = True
     max_share_price_usd: float = 25.0  # skip stocks above this price per share
     cash_reserve_pct: float = 0.20  # fraction of cash to keep undeployed
+    ratchet_step_pct: float = 0.05  # 5% milestone step for trailing stop ratchet
 
     def get_allocation(self, cycle_score: int) -> TierAllocation:
         clamped = max(-2, min(2, cycle_score))
@@ -481,6 +469,7 @@ def load_config(
         dry_run=os.environ.get("DRY_RUN", "true").lower() == "true",
         max_share_price_usd=float(os.environ.get("MAX_SHARE_PRICE_USD", "25.0")),
         cash_reserve_pct=float(os.environ.get("CASH_RESERVE_PCT", "0.20")),
+        ratchet_step_pct=float(os.environ.get("RATCHET_STEP", "0.05")),
     )
 
 
