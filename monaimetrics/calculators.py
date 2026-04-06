@@ -6,6 +6,8 @@ All percentages as decimals (0.25 = 25%).
 
 from __future__ import annotations
 
+import math
+
 
 def normalise_score(value: float | None, floor: float = 0.0, ceiling: float = 100.0) -> float:
     """Clamp a value to the 0-100 score range. None returns 0."""
@@ -54,6 +56,42 @@ def kelly_position_size(
 def stop_loss_price(entry_price: float, stop_pct: float) -> float:
     """Fixed percentage stop-loss. Returns the stop price."""
     return entry_price * (1 - stop_pct)
+
+
+def ratchet_stop_level(
+    entry_price: float,
+    current_price: float,
+    step: float = 0.05,
+) -> float | None:
+    """
+    5%-ratchet trailing stop level (stateless, computed from entry and current price only).
+
+    Each time price reaches or passes a milestone — entry × (1+step)^n — the stop
+    is locked at the previous milestone: entry × (1+step)^(n-1).
+
+    Example with step=0.05 and entry=$1.00:
+      price=$1.04   → None   (below first milestone, stop unchanged)
+      price=$1.05   → $1.00  (first milestone reached; stop = entry × 1.05^0)
+      price=$1.10   → $1.00  (between milestones 1 and 2)
+      price=$1.1025 → $1.05  (second milestone reached; stop = entry × 1.05^1)
+      price=$1.1576 → $1.05  (between milestones 2 and 3)
+      price=$1.1577 → $1.1025 (third milestone reached; stop = entry × 1.05^2)
+
+    Returns the stop price to set, or None if the price has not yet risen by one
+    full step above entry (meaning: leave the stop unchanged).
+
+    Implementation: a tiny epsilon (1e-9) is added to the log-ratio before flooring
+    so that milestone detection is numerically robust when the current price falls
+    exactly on a milestone boundary (float arithmetic can otherwise undercount by 1 ULP).
+    """
+    if entry_price <= 0 or step <= 0 or current_price <= entry_price:
+        return None
+    steps_cleared = math.floor(
+        math.log(current_price / entry_price) / math.log(1 + step) + 1e-9
+    )
+    if steps_cleared < 1:
+        return None
+    return round(entry_price * (1 + step) ** (steps_cleared - 1), 4)
 
 
 def atr_stop_loss_price(

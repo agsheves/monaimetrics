@@ -64,7 +64,6 @@ def make_position(
         entry_price=entry_price,
         entry_date=NOW - timedelta(weeks=weeks_held),
         stop_price=92.0, target_price=125.0,
-        trailing_stop=0.0, highest_price=current_price,
         current_price=current_price, weeks_held=weeks_held,
     )
 

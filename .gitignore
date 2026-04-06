@@ -1,8 +1,5 @@
 .env
 *.pem
-runtime_settings.json
-cache/
-data/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -11,4 +8,4 @@ dist/
 build/
 .venv/
 .pythonlibs/
-.uv/
+user_config.yaml

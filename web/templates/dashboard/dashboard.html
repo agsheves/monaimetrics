@@ -5,95 +5,8 @@
 {% block content %}
 <div class="page-header">
     <h1>Portfolio Overview</h1>
-    <p>
-        Risk profile: {{ data.profile|title }}
-        {% if data.dry_run %}
-            <span class="badge badge-action-hold" style="vertical-align:middle; margin-left: 0.5rem;">DRY RUN</span>
-        {% else %}
-            <span class="badge badge-action-buy" style="vertical-align:middle; margin-left: 0.5rem;">LIVE</span>
-        {% endif %}
-        {% if data.human_review %}
-            <span class="badge badge-action-watch" style="vertical-align:middle; margin-left: 0.25rem;">REVIEW ON</span>
-        {% endif %}
-    </p>
+    <p>Risk profile: {{ data.profile|title }}</p>
 </div>
-
-{% if data.pending_reviews %}
-<div class="card review-card">
-    <div class="card-title">Pending Review ({{ data.pending_reviews|length }})</div>
-    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem;">
-        The scheduler has proposed these trades. Approve or reject before they execute.
-    </p>
-    <div class="table-wrap">
-        <table>
-            <thead>
-                <tr>
-                    <th>Symbol</th>
-                    <th>Action</th>
-                    <th>Tier</th>
-                    <th>Confidence</th>
-                    <th>Size ($)</th>
-                    <th>Stop</th>
-                    <th>Target</th>
-                    <th>Time</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for s in data.pending_reviews %}
-                <tr>
-                    <td><strong>{{ s.symbol }}</strong></td>
-                    <td><span class="badge badge-action-{{ s.action|lower }}">{{ s.action }}</span></td>
-                    <td><span class="badge badge-{{ s.tier }}">{{ s.tier }}</span></td>
-                    <td>
-                        <div class="confidence-bar-wrap">
-                            <div class="confidence-bar" style="width:{{ s.confidence }}%"></div>
-                            <span>{{ s.confidence }}</span>
-                        </div>
-                    </td>
-                    <td>{% if s.position_size_usd > 0 %}${{ s.position_size_usd }}{% else %}&mdash;{% endif %}</td>
-                    <td>{% if s.stop_price %}<span class="text-danger">${{ s.stop_price }}</span>{% else %}&mdash;{% endif %}</td>
-                    <td>{% if s.target_price %}<span class="text-success">${{ s.target_price }}</span>{% else %}&mdash;{% endif %}</td>
-                    <td style="font-size:0.8rem; color:var(--text-muted);">{{ s.created_at }}</td>
-                    <td class="review-actions">
-                        <form method="post" action="{% url 'review_action' %}" style="display:inline;">
-                            {% csrf_token %}
-                            <input type="hidden" name="signal_id" value="{{ s.id }}">
-                            <button type="submit" name="action" value="approve" class="btn-review btn-approve" title="Approve">&#10003;</button>
-                            <button type="submit" name="action" value="reject" class="btn-review btn-reject" title="Reject">&#10005;</button>
-                        </form>
-                    </td>
-                </tr>
-                {% if s.reasons %}
-                <tr class="scan-reasons-row">
-                    <td colspan="9">
-                        <ul class="reasons-list">
-                            {% for r in s.reasons %}<li>{{ r }}</li>{% endfor %}
-                        </ul>
-                    </td>
-                </tr>
-                {% endif %}
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    <div style="display:flex; gap:0.5rem; margin-top:1rem;">
-        <form method="post" action="{% url 'review_action' %}">
-            {% csrf_token %}
-            <button type="submit" name="action" value="approve_all" class="btn btn-primary" style="font-size:0.8rem; padding:0.5rem 1rem;">Approve All</button>
-        </form>
-        <form method="post" action="{% url 'review_action' %}">
-            {% csrf_token %}
-            <button type="submit" name="action" value="reject_all" class="btn btn-secondary" style="font-size:0.8rem; padding:0.5rem 1rem;">Reject All</button>
-        </form>
-    </div>
-</div>
-{% elif data.human_review %}
-<div class="card">
-    <div class="card-title">Pending Review</div>
-    <p style="color: var(--text-muted); padding: 0.5rem 0;">No pending trades. The scheduler will propose trades during the next assessment.</p>
-</div>
-{% endif %}
 
 {% if not data.connected %}
 <div class="alert alert-warning">
@@ -114,11 +27,6 @@
     <div class="stat-card">
         <div class="stat-label">Buying Power</div>
         <div class="stat-value">${{ data.account.buying_power|floatformat:2 }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">Position Limits</div>
-        <div class="stat-value">${{ data.settings.min_position_usd|floatformat:0 }} — ${{ data.settings.max_position_usd|floatformat:0 }}</div>
-        <div class="stat-sub">Per trade</div>
     </div>
 </div>
 
@@ -142,6 +50,7 @@
 <div class="card">
     <div class="card-title">Positions ({{ data.positions|length }})</div>
     {% if data.positions %}
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -172,40 +81,11 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <p style="color: var(--text-muted); padding: 1rem 0;">No open positions.</p>
     {% endif %}
 </div>
 
 {% endif %}
-
-{% if data.activity %}
-<div class="card">
-    <div class="card-title">Recent Activity</div>
-    <div class="activity-timeline">
-        {% for e in data.activity %}
-        <div class="activity-item activity-type-{{ e.type|lower }}">
-            <div class="activity-dot"></div>
-            <div class="activity-content">
-                <div class="activity-header">
-                    <span class="badge badge-{{ e.type|lower }}">{{ e.type }}</span>
-                    {% if e.symbol %}<strong>{{ e.symbol }}</strong>{% endif %}
-                    {% if e.action %}<span class="badge badge-action-{{ e.action|lower }}">{{ e.action }}</span>{% endif %}
-                    <span class="activity-time">{{ e.date_display }} {{ e.ts_display }}</span>
-                </div>
-                {% if e.reasons %}
-                <div class="activity-reasons">
-                    {% for r in e.reasons %}<span>{{ r }}</span>{% endfor %}
-                </div>
-                {% endif %}
-            </div>
-        </div>
-        {% endfor %}
-    </div>
-    <div style="margin-top: 0.75rem; text-align: right;">
-        <a href="{% url 'journal' %}" class="small">View full journal &rarr;</a>
-    </div>
-</div>
-{% endif %}
-
 {% endblock %}
