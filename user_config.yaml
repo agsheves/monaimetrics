@@ -18,7 +18,7 @@ PROFIT_TARGET=0.15  # Profit target as a decimal (0.15 = 15%); overrides profile
 STOP_LOSS=0.06      # Stop-loss as a decimal (0.06 = 6%); overrides profile default for moderate tier
 
 # --- Risk profile ---
-RISK_PROFILE=moderate  # Risk profile used by the automated scheduler: conservative, moderate, or aggressive
+RISK_PROFILE=aggressive  # Risk profile used by the automated scheduler: conservative, moderate, or aggressive
 
 # --- Trailing stop ---
 RATCHET_STEP=0.05  # Step size for the ratchet trailing stop (0.05 = 5%); stop moves up each time price clears a new 5% milestone above entry
