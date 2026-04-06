@@ -1,7 +1,7 @@
 # Monaimetrics
 
 ## Overview
-Monaimetrics is a Python trading dashboard that connects to Alpaca's trading API. It provides portfolio management, activity reporting, growth tracking, trade planning, and strategy research capabilities through both a CLI and a Django web UI.
+Monaimetrics is a Python trading platform that connects to Alpaca's trading API. It automatically evaluates US equities through multiple investment frameworks and executes trades that fit the investment thesis. It provides portfolio management, activity reporting, growth tracking, trade planning, and strategy research through both a CLI and a Django web UI.
 
 ## Project Architecture
 - **Language**: Python 3.12
@@ -15,19 +15,23 @@ Monaimetrics is a Python trading dashboard that connects to Alpaca's trading API
   - `config.py` - Configuration, enums, risk profiles, allocation tables
   - `data_input.py` - Alpaca API data adapter layer
   - `calculators.py` - Technical analysis calculations
-  - `strategy.py` - Trading strategy logic
+  - `strategy.py` - Trading strategy logic (6 framework scoring system)
   - `portfolio_manager.py` - Portfolio orchestration
   - `trading_interface.py` - Order execution via Alpaca
+  - `scheduler.py` - Automated trading scheduler (assessments + stop checks)
+  - `runtime_settings.py` - Persistent user-adjustable settings (JSON file)
+  - `review_queue.py` - Human-in-the-loop trade approval queue
   - `reporting.py` - Trade/performance reporting
   - `audit_qa.py` - Retrospective analysis
-  - `prediction_trading_arb.py` - Kalshi arb trading engine (separate config, accounting, execution)
+  - `fundamental_data.py` - Alpha Vantage fundamental data adapter with file-based caching
+  - `backtest.py` - Historical backtest engine (simulates strategy over cached price data)
+  - `alpha_signals.py` - External data feed overlay system
 - `web/` - Django web application
   - `settings.py` - Django settings (ALLOWED_HOSTS=*, session cookies, CSRF)
   - `urls.py` - Root URL config
   - `wsgi.py` - WSGI application
   - `dashboard/` - Main app (views, URLs, template tags)
-  - (no services folder — all functional code lives in `monaimetrics/`)
-  - `templates/dashboard/` - HTML templates (base, login, dashboard, settings, lookup, research, arb)
+  - `templates/dashboard/` - HTML templates (base, login, dashboard, settings, lookup, scan, research)
   - `static/css/` - Dark theme CSS
 - `_developer/` - Reference documents (used by research panel)
 - `tests/` - Test suite
@@ -36,11 +40,10 @@ Monaimetrics is a Python trading dashboard that connects to Alpaca's trading API
 ### Key Dependencies
 - `django` - Web framework
 - `alpaca-py` - Alpaca trading/data SDK
+- `apscheduler` - Background task scheduling
 - `groq` - Groq API client (LLM for research panel)
 - `gunicorn` - Production WSGI server
 - `python-dotenv` - Environment variable loading
-- `pytz` - Timezone support
-- `cryptography` - RSA-PSS signing for Kalshi API auth
 
 ### Configuration — Two-source system
 
@@ -67,12 +70,12 @@ No `.env` file is used; all secrets live in Replit app secrets only.
 
 ### Pages
 1. **Login** (`/login/`) - Simple username/password auth
-2. **Portfolio** (`/`) - Portfolio value, cash, positions, allocation bar
+2. **Portfolio** (`/`) - Portfolio value, cash, positions, allocation bar, pending trade reviews
 3. **Symbol Lookup** (`/lookup/`) - Stock lookup with price, technicals, trading signals
-4. **Scan** (`/scan/`) - Dry-run opportunity scan across a symbol universe; buy candidates ranked by confidence
-5. **Research** (`/research/`) - Ask questions about trading strategies via Groq LLM
-6. **Arb Trading** (`/arb/`) - Kalshi prediction market arbitrage dashboard (separate from stock portfolio)
-7. **Settings** (`/settings/`) - Risk profile selector with allocation table preview
+4. **Scan** (`/scan/`) - Opportunity scan across the full Alpaca universe; buy candidates ranked by confidence
+5. **Backtest** (`/backtest/`) - Simulate the strategy over historical data with equity curve, trade log, win/loss stats
+6. **Research** (`/research/`) - Ask questions about trading strategies via Groq LLM, with suggested quick questions and markdown rendering
+7. **Settings** (`/settings/`) - Risk profile selector, position size min/max, universe limit, dry run toggle, human review toggle
 
 ### Automatic Trading Scheduler
 - Boots via Django's `AppConfig.ready()` hook in `web/dashboard/apps.py`
@@ -99,10 +102,3 @@ No `.env` file is used; all secrets live in Replit app secrets only.
 - **CLI**: `python -m monaimetrics.cli`
 - **Tests**: `python -m pytest tests/`
 - **Production**: `gunicorn --bind=0.0.0.0:5000 --workers=2 web.wsgi:application`
-
-## User Preferences
-- Clean dark theme UI
-- Minimal additional languages (Python-focused)
-- Personal tool, single-user auth via env vars
-- Django for backend
-- Groq (Llama Maverick) for research panel

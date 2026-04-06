@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import asdict
 from datetime import datetime
 
 import pytz
@@ -39,7 +40,6 @@ log = logging.getLogger(__name__)
 ET = pytz.timezone("America/New_York")
 
 STOP_CHECK_INTERVAL = int(os.environ.get("STOP_CHECK_INTERVAL_MINUTES", "15"))
-SCAN_UNIVERSE_LIMIT = int(os.environ.get("SCAN_UNIVERSE_LIMIT", "150"))
 
 
 def _is_market_open() -> bool:
@@ -51,8 +51,24 @@ def _is_market_open() -> bool:
     return open_time <= now < close_time
 
 
+def _load_runtime_config():
+    """Load runtime settings and build config from them."""
+    from monaimetrics import runtime_settings
+    from monaimetrics.config import load_config, RiskProfile
+
+    rt = runtime_settings.load()
+
+    try:
+        profile = RiskProfile(rt.risk_profile)
+    except ValueError:
+        profile = RiskProfile.MODERATE
+
+    config = load_config(profile, runtime=asdict(rt))
+    return config, rt
+
+
 def run_assessment_job() -> None:
-    """Full strategic assessment — evaluates the live universe and executes signals."""
+    """Full strategic assessment with VIX cycle scoring and market breadth."""
     if not _is_market_open():
         log.debug("Scheduler: market closed, skipping assessment")
         return
@@ -60,35 +76,127 @@ def run_assessment_job() -> None:
     from monaimetrics.config import load_config_from_env
     from monaimetrics.data_input import AlpacaClients, get_tradeable_assets
     from monaimetrics.portfolio_manager import PortfolioManager
+    from monaimetrics import review_queue
+    from monaimetrics import trade_journal
+    from monaimetrics import notifications
+    from monaimetrics.market_intelligence import (
+        fetch_vix, compute_cycle_score, compute_market_breadth,
+    )
 
     try:
         config = load_config_from_env()
         clients = AlpacaClients(config.api)
         mode = "DRY RUN" if config.dry_run else "LIVE"
 
-        universe = get_tradeable_assets(clients, limit=SCAN_UNIVERSE_LIMIT)
+        # Fetch VIX and compute cycle score
+        vix = fetch_vix()
+        cycle_score = compute_cycle_score(vix=vix)
+
+        universe = get_tradeable_assets(clients, limit=rt.scan_universe_limit)
         log.info(
             "Scheduler [%s]: assessment starting — %d symbols in universe (profile=%s)",
             mode, len(universe), config.profile.value,
         )
 
-        pm = PortfolioManager(config, clients)
-        plan, records = pm.run_assessment(watchlist=universe)
+        pm = PortfolioManager(config, clients, restore_state=True)
+        pm.cycle_score = cycle_score
 
-        buys    = sum(1 for r in records if r.signal.action.value == "buy")
-        sells   = sum(1 for r in records if r.signal.action.value == "sell")
-        reduces = sum(1 for r in records if r.signal.action.value == "reduce")
-        log.info(
-            "Scheduler [%s]: assessment complete — %d signal(s): %d buy, %d sell, %d reduce",
-            mode, len(records), buys, sells, reduces,
+        # Reconcile positions with broker on first run
+        pm.reconcile_positions()
+
+        plan, records = pm.run_assessment(
+            watchlist=universe,
+            execute=not rt.human_review,
         )
+
+        buys    = sum(1 for s in plan.signals if s.action.value == "buy")
+        sells   = sum(1 for s in plan.signals if s.action.value == "sell")
+        reduces = sum(1 for s in plan.signals if s.action.value == "reduce")
+
+        # Compute market breadth from scanned symbols
+        from monaimetrics.data_input import get_technical_data
+        stage_counts = {1: 0, 2: 0, 3: 0, 4: 0}
+        for sig in plan.signals:
+            try:
+                tech = get_technical_data(sig.symbol, clients=clients)
+                stage = tech.stage
+                if stage in stage_counts:
+                    stage_counts[stage] += 1
+            except Exception:
+                pass
+        breadth = compute_market_breadth(stage_counts)
+
+        # Log assessment to journal
+        trade_journal.log_event(
+            "ASSESSMENT",
+            data={
+                "universe_size": len(universe),
+                "buys": buys, "sells": sells, "reduces": reduces,
+                "cycle_score": cycle_score,
+                "vix": vix,
+                "breadth": breadth,
+                "mode": mode,
+                "human_review": rt.human_review,
+            },
+            reasons=[
+                f"Assessed {len(universe)} symbols: "
+                f"{buys} buy, {sells} sell, {reduces} reduce",
+                f"VIX≈{vix:.1f}, cycle={cycle_score}" if vix else f"VIX=N/A, cycle={cycle_score}",
+                f"Breadth: {breadth['signal']} ({breadth['advancing_pct']:.0%} advancing)",
+            ],
+        )
+
+        if rt.human_review:
+            actionable = []
+            for sig in plan.signals:
+                if sig.action.value in ("buy", "sell", "reduce"):
+                    actionable.append({
+                        "symbol": sig.symbol,
+                        "action": sig.action.value.upper(),
+                        "tier": sig.tier.value,
+                        "confidence": sig.confidence,
+                        "position_size_usd": sig.position_size_usd,
+                        "stop_price": sig.stop_price,
+                        "target_price": sig.target_price,
+                        "reasons": sig.reasons,
+                        "price": 0,
+                    })
+            if actionable:
+                review_queue.add_signals(actionable)
+                log.info(
+                    "Scheduler [%s]: %d signal(s) queued for review "
+                    "(%d buy, %d sell, %d reduce)",
+                    mode, len(actionable), buys, sells, reduces,
+                )
+                notifications.notify(
+                    "ASSESSMENT_COMPLETE",
+                    f"Assessment: {len(actionable)} signal(s) awaiting review",
+                    f"Scanned {len(universe)} symbols. "
+                    f"{buys} buy, {sells} sell, {reduces} reduce. "
+                    f"VIX≈{vix:.1f}, cycle={cycle_score}." if vix else
+                    f"Scanned {len(universe)} symbols. "
+                    f"{buys} buy, {sells} sell, {reduces} reduce.",
+                )
+        else:
+            log.info(
+                "Scheduler [%s]: assessment complete — %d signal(s): "
+                "%d buy, %d sell, %d reduce",
+                mode, len(records), buys, sells, reduces,
+            )
+            if buys + sells + reduces > 0:
+                notifications.notify(
+                    "ASSESSMENT_COMPLETE",
+                    f"Assessment: {buys + sells + reduces} trade(s) executed",
+                    f"Scanned {len(universe)} symbols. "
+                    f"{buys} buy, {sells} sell, {reduces} reduce.",
+                )
 
     except Exception:
         log.exception("Scheduler: assessment job failed")
 
 
 def run_stop_check_job() -> None:
-    """Lightweight stop-loss check on current positions."""
+    """Lightweight stop-loss check with state restoration."""
     if not _is_market_open():
         return
 
@@ -99,7 +207,7 @@ def run_stop_check_job() -> None:
     try:
         config = load_config_from_env()
         clients = AlpacaClients(config.api)
-        pm = PortfolioManager(config, clients)
+        pm = PortfolioManager(config, clients, restore_state=True)
         records = pm.run_stop_check()
 
         if records:
@@ -113,12 +221,114 @@ def run_stop_check_job() -> None:
         log.exception("Scheduler: stop check job failed")
 
 
+def run_approved_trades_job() -> None:
+    """Execute trades approved in the review queue."""
+    if not _is_market_open():
+        return
+
+    from monaimetrics import review_queue
+    from monaimetrics.config import SignalType, SignalUrgency, Tier
+    from monaimetrics.data_input import AlpacaClients
+    from monaimetrics.portfolio_manager import PortfolioManager
+    from monaimetrics.strategy import Signal, TradingPlan
+
+    approved = review_queue.get_approved()
+    if not approved:
+        return
+
+    try:
+        config, _rt = _load_runtime_config()
+        clients = AlpacaClients(config.api)
+        pm = PortfolioManager(config, clients, restore_state=True)
+        mode = "DRY RUN" if config.dry_run else "LIVE"
+
+        signals = []
+        for pending in approved:
+            action_map = {
+                "BUY": SignalType.BUY,
+                "SELL": SignalType.SELL,
+                "REDUCE": SignalType.REDUCE,
+            }
+            tier_map = {
+                "moderate": Tier.MODERATE,
+                "high": Tier.HIGH,
+            }
+            signals.append(Signal(
+                symbol=pending.symbol,
+                action=action_map.get(pending.action, SignalType.HOLD),
+                urgency=SignalUrgency.STANDARD,
+                tier=tier_map.get(pending.tier, Tier.MODERATE),
+                confidence=pending.confidence,
+                position_size_usd=pending.position_size_usd,
+                stop_price=pending.stop_price,
+                target_price=pending.target_price,
+                reasons=pending.reasons + ["Approved by human review"],
+            ))
+
+        from datetime import timezone
+        plan = TradingPlan(
+            signals=signals,
+            cycle_score=pm.cycle_score,
+            timestamp=datetime.now(timezone.utc),
+        )
+        records = pm.execute_plan(plan)
+
+        log.info(
+            "Scheduler [%s]: executed %d approved trade(s)",
+            mode, len(records),
+        )
+
+    except Exception:
+        log.exception("Scheduler: approved trades execution failed")
+
+
+def run_daily_digest_job() -> None:
+    """End-of-day summary: log digest and send notification."""
+    from monaimetrics import trade_journal
+    from monaimetrics import notifications
+
+    try:
+        summary = trade_journal.daily_summary()
+
+        trade_journal.log_event(
+            "DIGEST",
+            data=summary,
+            reasons=[
+                f"Day summary: {summary['buys']} buys, {summary['sells']} sells, "
+                f"{summary['stops_triggered']} stops triggered",
+            ],
+        )
+
+        if summary["total_events"] > 0:
+            notifications.notify(
+                "DAILY_DIGEST",
+                f"Daily Digest: {summary['buys']}B / {summary['sells']}S",
+                f"Today: {summary['buys']} buys (${summary['buy_value']:,.0f}), "
+                f"{summary['sells']} sells (${summary['sell_value']:,.0f}), "
+                f"{summary['stops_triggered']} stops. "
+                f"Symbols: {', '.join(summary['symbols_traded']) or 'none'}.",
+                priority="info",
+            )
+
+        log.info("Scheduler: daily digest — %d events", summary["total_events"])
+
+    except Exception:
+        log.exception("Scheduler: daily digest job failed")
+
+
 def start(run_assessment: bool = True, run_stops: bool = True) -> None:
     from apscheduler.schedulers.background import BackgroundScheduler
     from apscheduler.triggers.cron import CronTrigger
     from apscheduler.triggers.interval import IntervalTrigger
+    from monaimetrics import trade_journal
 
     scheduler = BackgroundScheduler(timezone=ET)
+
+    # Log system startup
+    trade_journal.log_event(
+        "SYSTEM", action="STARTUP",
+        reasons=["Trading scheduler started"],
+    )
 
     if run_assessment:
         # Hourly assessment: every hour at :45, from 09:45 through 15:45 ET (Mon–Fri)
@@ -146,7 +356,33 @@ def start(run_assessment: bool = True, run_stops: bool = True) -> None:
             replace_existing=True,
             misfire_grace_time=60,
         )
-        log.info("Scheduler: stop check registered (every %dm, market hours only)", STOP_CHECK_INTERVAL)
+        log.info("Scheduler: stop check registered (every %dm)", STOP_CHECK_INTERVAL)
+
+    # Approved trades every 2 minutes
+    scheduler.add_job(
+        run_approved_trades_job,
+        trigger=IntervalTrigger(minutes=2),
+        id="approved_trades",
+        name="Execute approved trades (every 2m)",
+        replace_existing=True,
+        misfire_grace_time=60,
+    )
+    log.info("Scheduler: approved trade execution registered (every 2m)")
+
+    # Daily digest at 16:05 ET (just after market close)
+    scheduler.add_job(
+        run_daily_digest_job,
+        trigger=CronTrigger(
+            day_of_week="mon-fri",
+            hour=16, minute=5,
+            timezone=ET,
+        ),
+        id="daily_digest",
+        name="Daily digest at 16:05 ET",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+    log.info("Scheduler: daily digest registered at 16:05 ET")
 
     scheduler.start()
     log.info(

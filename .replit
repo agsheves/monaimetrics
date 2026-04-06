@@ -4,7 +4,7 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
-packages = ["cargo", "libiconv", "libxcrypt", "libyaml", "openssl", "pkg-config", "rustc"]
+packages = ["libiconv", "libxcrypt", "libyaml", "openssl", "pkg-config"]
 
 [workflows]
 runButton = "Project"
@@ -38,7 +38,6 @@ externalPort = 80
 
 [userenv.shared]
 APP_USERNAME = "admin"
-KALSHI_USE_DEMO = "false"
 
 [deployment]
 deploymentTarget = "vm"

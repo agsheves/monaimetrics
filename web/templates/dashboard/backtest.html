@@ -1,0 +1,222 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Backtest - Monaimetrics{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Backtest</h1>
+    <p>Simulate the strategy over historical data before committing capital</p>
+</div>
+
+<div class="card">
+    <div class="card-title">Configuration</div>
+    <form method="post" class="backtest-form">
+        {% csrf_token %}
+        <div class="settings-row" style="margin-bottom: 1rem;">
+            <div class="form-group">
+                <label>Symbols (comma-separated)</label>
+                <input type="text" name="symbols" value="{{ symbols_input }}" placeholder="AAPL, MSFT, GOOGL, NVDA">
+            </div>
+        </div>
+        <div class="settings-row" style="margin-bottom: 1rem;">
+            <div class="form-group">
+                <label>Start Date</label>
+                <input type="text" name="start_date" value="{{ start_date|default:'2024-01-01' }}" placeholder="2024-01-01">
+            </div>
+            <div class="form-group">
+                <label>End Date</label>
+                <input type="text" name="end_date" value="{{ end_date|default:'2024-12-31' }}" placeholder="2024-12-31">
+            </div>
+            <div class="form-group">
+                <label>Initial Capital ($)</label>
+                <input type="number" name="initial_capital" value="{{ initial_capital|default:'100000' }}" min="1000" step="1000">
+            </div>
+            <div class="form-group">
+                <label>Max Positions</label>
+                <input type="number" name="max_positions" value="{{ max_positions|default:'10' }}" min="1" max="50">
+            </div>
+        </div>
+        <div class="form-group" style="margin-bottom: 1rem;">
+            <label>Risk Profile</label>
+            <div class="radio-group">
+                <div class="radio-option">
+                    <input type="radio" id="bt_conservative" name="risk_profile" value="conservative" {% if risk_profile == 'conservative' %}checked{% endif %}>
+                    <label for="bt_conservative">Conservative</label>
+                </div>
+                <div class="radio-option">
+                    <input type="radio" id="bt_moderate" name="risk_profile" value="moderate" {% if risk_profile != 'conservative' and risk_profile != 'aggressive' %}checked{% endif %}>
+                    <label for="bt_moderate">Moderate</label>
+                </div>
+                <div class="radio-option">
+                    <input type="radio" id="bt_aggressive" name="risk_profile" value="aggressive" {% if risk_profile == 'aggressive' %}checked{% endif %}>
+                    <label for="bt_aggressive">Aggressive</label>
+                </div>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Run Backtest</button>
+        <span class="small text-muted" style="margin-left: 1rem;">
+            {{ info.cached_fundamentals }} symbol{{ info.cached_fundamentals|pluralize }} cached
+        </span>
+    </form>
+</div>
+
+{% if result %}
+{% if result.error %}
+<div class="alert alert-error">{{ result.error }}</div>
+{% else %}
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Final Value</div>
+        <div class="stat-value {% if result.total_return >= 0 %}positive{% else %}negative{% endif %}">
+            ${{ result.final_value|floatformat:2 }}
+        </div>
+        <div class="stat-sub">Started at ${{ result.config.initial_capital|floatformat:0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Total Return</div>
+        <div class="stat-value {% if result.total_return_pct >= 0 %}positive{% else %}negative{% endif %}">
+            {% widthratio result.total_return_pct 1 100 %}%
+        </div>
+        <div class="stat-sub">${{ result.total_return|floatformat:2 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Win Rate</div>
+        <div class="stat-value">
+            {% widthratio result.win_rate 1 100 %}%
+        </div>
+        <div class="stat-sub">{{ result.win_count }}W / {{ result.loss_count }}L</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Max Drawdown</div>
+        <div class="stat-value negative">
+            {% widthratio result.max_drawdown 1 100 %}%
+        </div>
+        <div class="stat-sub">{{ result.days_simulated }} trading days</div>
+    </div>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Avg Win</div>
+        <div class="stat-value positive">
+            {% widthratio result.avg_win_pct 1 100 %}%
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Avg Loss</div>
+        <div class="stat-value negative">
+            {% widthratio result.avg_loss_pct 1 100 %}%
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Total Trades</div>
+        <div class="stat-value">{{ result.buy_count }}</div>
+        <div class="stat-sub">{{ result.buy_count }} buys, {{ result.sell_count }} sells</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Symbols Evaluated</div>
+        <div class="stat-value">{{ result.symbols_evaluated }}</div>
+    </div>
+</div>
+
+{% if result.equity_curve %}
+<div class="card">
+    <div class="card-title">Equity Curve</div>
+    <div class="equity-chart" id="equity-chart">
+        <canvas id="equityCanvas" height="200"></canvas>
+    </div>
+</div>
+{% endif %}
+
+{% if result.trades %}
+<div class="card">
+    <div class="card-title">Trade Log ({{ result.trades|length }} trades)</div>
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Symbol</th>
+                    <th>Action</th>
+                    <th>Price</th>
+                    <th>Qty</th>
+                    <th>Value</th>
+                    <th>Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in result.trades %}
+                <tr>
+                    <td>{{ t.date }}</td>
+                    <td><strong>{{ t.symbol }}</strong></td>
+                    <td><span class="badge badge-action-{{ t.action|lower }}">{{ t.action }}</span></td>
+                    <td>${{ t.price }}</td>
+                    <td>{{ t.qty }}</td>
+                    <td>${{ t.value|floatformat:2 }}</td>
+                    <td class="small text-muted">{{ t.reason }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% endif %}
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+{% if result and result.equity_curve %}
+<script>
+(function() {
+    const data = {{ result.equity_curve_json|safe }};
+    const canvas = document.getElementById('equityCanvas');
+    if (!canvas || !data.length) return;
+
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = 200;
+
+    const values = data.map(d => d.value);
+    const minV = Math.min(...values) * 0.98;
+    const maxV = Math.max(...values) * 1.02;
+    const range = maxV - minV || 1;
+
+    const w = canvas.width;
+    const h = canvas.height;
+    const pad = 10;
+
+    ctx.strokeStyle = '#58a6ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    for (let i = 0; i < data.length; i++) {
+        const x = pad + (i / (data.length - 1)) * (w - 2 * pad);
+        const y = h - pad - ((values[i] - minV) / range) * (h - 2 * pad);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Fill under
+    ctx.lineTo(w - pad, h - pad);
+    ctx.lineTo(pad, h - pad);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(88, 166, 255, 0.08)';
+    ctx.fill();
+
+    // Labels
+    ctx.fillStyle = '#8b949e';
+    ctx.font = '11px -apple-system, sans-serif';
+    ctx.fillText('$' + Math.round(maxV).toLocaleString(), pad, pad + 12);
+    ctx.fillText('$' + Math.round(minV).toLocaleString(), pad, h - pad - 2);
+    ctx.fillText(data[0].date, pad, h - 1);
+    const lastDate = data[data.length - 1].date;
+    const tw = ctx.measureText(lastDate).width;
+    ctx.fillText(lastDate, w - pad - tw, h - 1);
+})();
+</script>
+{% endif %}
+{% endblock %}

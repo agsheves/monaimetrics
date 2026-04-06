@@ -75,6 +75,13 @@ def _check_position_size(
             f"${config.max_share_price_usd:,.2f}"
         )
 
+    # Minimum position size — avoid dust trades
+    if order_value < config.min_position_usd:
+        return (
+            f"Order value ${order_value:,.2f} below minimum position size "
+            f"${config.min_position_usd:,.2f}"
+        )
+
     return None
 
 

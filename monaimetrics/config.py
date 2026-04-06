@@ -334,8 +334,8 @@ FRAMEWORK_WEIGHTS: dict[Tier, FrameworkWeights] = {
 class APIConfig:
     alpaca_api_key: str = ""
     alpaca_secret_key: str = ""
-    alpaca_paper: bool = False
-    alpaca_base_url: str = "https://api.alpaca.markets/v2"
+    alpaca_paper: bool = True
+    alpaca_base_url: str = "https://paper-api.alpaca.markets/v2"
     financial_datasets_api_key: str = ""
     sentiment_api_url: str = ""
     sentiment_api_key: str = ""
@@ -345,13 +345,36 @@ class APIConfig:
 
 
 def _load_api_config() -> APIConfig:
+    use_paper = os.environ.get("ALPACA_PAPER", "true").lower() != "false"
+
+    if use_paper:
+        api_key = (os.environ.get("ALPACA_API_KEY_PAPER", "")
+                   or os.environ.get("ALPACA_PAPER_API_KEY", "")
+                   or os.environ.get("ALPACA_API_KEY", ""))
+        secret_key = (os.environ.get("ALPACA_SECRET_KEY_PAPER", "")
+                      or os.environ.get("ALPACA_PAPER_SECRET_KEY", "")
+                      or os.environ.get("ALPACA_SECRET_KEY", ""))
+        default_url = (os.environ.get("ALPACA_BASE_URL_PAPER", "")
+                       or "https://paper-api.alpaca.markets/v2")
+    else:
+        api_key = os.environ.get("ALPACA_API_KEY", "")
+        secret_key = os.environ.get("ALPACA_SECRET_KEY", "")
+        default_url = "https://api.alpaca.markets/v2"
+
+    # Only use ALPACA_BASE_URL override when it matches the selected mode.
+    # This prevents a live base URL in .env from overriding paper mode.
+    base_url = default_url
+    env_base = os.environ.get("ALPACA_BASE_URL", "")
+    if env_base:
+        is_paper_url = "paper" in env_base.lower()
+        if use_paper == is_paper_url:
+            base_url = env_base
+
     return APIConfig(
-        alpaca_api_key=os.environ.get("ALPACA_API_KEY", ""),
-        alpaca_secret_key=os.environ.get("ALPACA_SECRET_KEY", ""),
-        alpaca_paper=os.environ.get("ALPACA_PAPER", "false").lower() == "true",
-        alpaca_base_url=os.environ.get(
-            "ALPACA_BASE_URL", "https://api.alpaca.markets/v2"
-        ),
+        alpaca_api_key=api_key,
+        alpaca_secret_key=secret_key,
+        alpaca_paper=use_paper,
+        alpaca_base_url=base_url,
         financial_datasets_api_key=os.environ.get("FINANCIAL_DATASETS_API_KEY", ""),
         sentiment_api_url=os.environ.get("SENTIMENT_API_URL", ""),
         sentiment_api_key=os.environ.get("SENTIMENT_API_KEY", ""),
@@ -402,6 +425,8 @@ class SystemConfig:
     max_share_price_usd: float = 25.0  # skip stocks above this price per share
     cash_reserve_pct: float = 0.20  # fraction of cash to keep undeployed
     ratchet_step_pct: float = 0.05  # 5% milestone step for trailing stop ratchet
+    min_position_usd: float = 100.0
+    max_position_usd: float = 5000.0
 
     def get_allocation(self, cycle_score: int) -> TierAllocation:
         clamped = max(-2, min(2, cycle_score))
@@ -418,8 +443,14 @@ class SystemConfig:
 
 def load_config(
     profile: RiskProfile = RiskProfile.MODERATE,
+    *,
+    runtime: dict | None = None,
 ) -> SystemConfig:
-    """Build a full SystemConfig from a risk profile and environment variables."""
+    """Build a full SystemConfig from a risk profile and environment variables.
+
+    If ``runtime`` is provided it overrides env-var defaults for:
+        dry_run, min_position_usd, max_position_usd.
+    """
 
     tier_defaults: dict[RiskProfile, dict] = {
         RiskProfile.CONSERVATIVE: dict(
@@ -462,6 +493,7 @@ def load_config(
     }
 
     overrides = tier_defaults[profile]
+    rt = runtime or {}
 
     # PROFIT_TARGET and STOP_LOSS env vars override the profile default for the moderate tier
     mod_defaults = ModerateTierConfig()
@@ -497,6 +529,18 @@ def load_config(
         max_share_price_usd=float(os.environ.get("MAX_SHARE_PRICE_USD", "25.0")),
         cash_reserve_pct=float(os.environ.get("CASH_RESERVE_PCT", "0.20")),
         ratchet_step_pct=float(os.environ.get("RATCHET_STEP", "0.05")),
+        dry_run=rt.get(
+            "dry_run",
+            os.environ.get("DRY_RUN", "true").lower() == "true",
+        ),
+        min_position_usd=float(rt.get(
+            "min_position_usd",
+            os.environ.get("MIN_POSITION_USD", "100.0"),
+        )),
+        max_position_usd=float(rt.get(
+            "max_position_usd",
+            os.environ.get("MAX_POSITION_USD", "5000.0"),
+        )),
     )
 
 
