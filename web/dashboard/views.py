@@ -14,6 +14,16 @@ from monaimetrics.user_config import update_user_config
 
 log = logging.getLogger(__name__)
 
+_VALID_PROFILES = ("conservative", "moderate", "aggressive")
+
+
+def _current_profile() -> str:
+    """Read the active risk profile from the environment (loaded from user_config.yaml).
+    Never falls back to session — the file is the single source of truth."""
+    raw = os.environ.get("RISK_PROFILE", "moderate")
+    val = raw.strip().lower()
+    return val if val in _VALID_PROFILES else "moderate"
+
 
 def login_required(view_func):
     @functools.wraps(view_func)
@@ -41,7 +51,6 @@ def login_view(request: HttpRequest) -> HttpResponse:
             error = "APP_PASSWORD not configured in environment."
         elif username == expected_user and password == expected_pass:
             request.session["authenticated"] = True
-            request.session["risk_profile"] = os.environ.get("RISK_PROFILE", "moderate").lower()
             return redirect("dashboard")
         else:
             error = "Invalid credentials."
@@ -56,7 +65,7 @@ def logout_view(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def dashboard_view(request: HttpRequest) -> HttpResponse:
-    profile = request.session.get("risk_profile", "moderate")
+    profile = _current_profile()
     data = get_portfolio_data(profile)
     response = render(request, "dashboard/dashboard.html", {"data": data})
     response["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -66,21 +75,19 @@ def dashboard_view(request: HttpRequest) -> HttpResponse:
 @login_required
 def settings_view(request: HttpRequest) -> HttpResponse:
     if request.method == "POST":
-        profile = request.POST.get("risk_profile", "moderate")
-        if profile in ("conservative", "moderate", "aggressive"):
-            request.session["risk_profile"] = profile
-            # Persist to user_config.yaml so the scheduler picks it up too
+        profile = request.POST.get("risk_profile", "").strip().lower()
+        if profile in _VALID_PROFILES:
             try:
                 update_user_config("RISK_PROFILE", profile)
             except Exception as e:
                 log.warning("Could not persist RISK_PROFILE to user_config.yaml: %s", e)
 
-    profile = request.session.get("risk_profile", "moderate")
+    profile = _current_profile()
     allocation_table = get_allocation_for_profile(profile)
 
     response = render(request, "dashboard/settings.html", {
         "profile": profile,
-        "profiles": ["conservative", "moderate", "aggressive"],
+        "profiles": list(_VALID_PROFILES),
         "allocation_table": allocation_table,
     })
     response["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -93,8 +100,7 @@ def lookup_view(request: HttpRequest) -> HttpResponse:
     data = None
 
     if symbol:
-        profile = request.session.get("risk_profile", "moderate")
-        data = get_symbol_data(symbol, profile)
+        data = get_symbol_data(symbol, _current_profile())
 
     response = render(request, "dashboard/lookup.html", {"symbol": symbol, "data": data})
     response["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -129,10 +135,9 @@ def arb_view(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def scan_view(request: HttpRequest) -> HttpResponse:
-    profile = request.session.get("risk_profile", "moderate")
     symbols_raw = request.GET.get("symbols", "").strip().upper()
     symbols = [s.strip() for s in symbols_raw.split(",") if s.strip()] if symbols_raw else None
-    data = scan_for_opportunities(profile, symbols)
+    data = scan_for_opportunities(_current_profile(), symbols)
     response = render(request, "dashboard/scan.html", {
         "data": data,
         "symbols_input": symbols_raw,
