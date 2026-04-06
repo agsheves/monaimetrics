@@ -129,7 +129,8 @@ class TestRatchetStopLevel:
     def test_partial_gain_under_step_returns_none(self):
         assert ratchet_stop_level(1.00, 1.04) is None
 
-    def test_first_milestone_locks_at_entry(self):
+    def test_first_milestone_exact_boundary(self):
+        # price == entry × 1.05^1 exactly (floating-point safe with epsilon)
         result = ratchet_stop_level(1.00, 1.05)
         assert result == pytest.approx(1.00, rel=1e-4)
 
@@ -137,12 +138,18 @@ class TestRatchetStopLevel:
         result = ratchet_stop_level(1.00, 1.08)
         assert result == pytest.approx(1.00, rel=1e-4)
 
-    def test_second_milestone_locks_at_first(self):
+    def test_second_milestone_exact_boundary(self):
+        # price == entry × 1.05^2 = 1.1025 exactly (the classic float undercount case)
+        result = ratchet_stop_level(1.00, 1.1025)
+        assert result == pytest.approx(1.05, rel=1e-4)
+
+    def test_second_milestone_above_boundary(self):
         result = ratchet_stop_level(1.00, 1.103)
         assert result == pytest.approx(1.05, rel=1e-4)
 
-    def test_third_milestone(self):
-        result = ratchet_stop_level(1.00, 1.158)
+    def test_third_milestone_exact_boundary(self):
+        # price == entry × 1.05^3 = 1.157625 exactly
+        result = ratchet_stop_level(1.00, 1.157625)
         assert result == pytest.approx(1.1025, rel=1e-3)
 
     def test_custom_step(self):
@@ -154,7 +161,7 @@ class TestRatchetStopLevel:
 
     def test_stop_only_moves_up(self):
         low = ratchet_stop_level(1.00, 1.05)
-        high = ratchet_stop_level(1.00, 1.103)
+        high = ratchet_stop_level(1.00, 1.1025)
         assert high > low
 
 
