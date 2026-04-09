@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from datetime import datetime
 
 import pytz
@@ -54,6 +55,7 @@ SCAN_UNIVERSE_LIMIT = int(os.environ.get("SCAN_UNIVERSE_LIMIT", "150"))
 # ---------------------------------------------------------------------------
 
 _pm = None  # type: ignore[var-annotated]  # PortfolioManager | None
+_pm_lock = threading.Lock()  # guards singleton creation and job-body execution
 
 
 def _get_or_create_pm():
@@ -116,30 +118,31 @@ def run_assessment_job() -> None:
 
     from monaimetrics.data_input import get_tradeable_assets
 
-    try:
-        pm = _get_or_create_pm()
-        config = pm.config
-        mode = "DRY RUN" if config.dry_run else "LIVE"
+    with _pm_lock:
+        try:
+            pm = _get_or_create_pm()
+            config = pm.config
+            mode = "DRY RUN" if config.dry_run else "LIVE"
 
-        universe = get_tradeable_assets(pm.clients, limit=SCAN_UNIVERSE_LIMIT)
-        log.info(
-            "Scheduler [%s]: assessment starting — %d symbols in universe (profile=%s, "
-            "tracking %d position(s))",
-            mode, len(universe), config.profile.value, len(pm.managed_positions),
-        )
+            universe = get_tradeable_assets(pm.clients, limit=SCAN_UNIVERSE_LIMIT)
+            log.info(
+                "Scheduler [%s]: assessment starting — %d symbols in universe (profile=%s, "
+                "tracking %d position(s))",
+                mode, len(universe), config.profile.value, len(pm.managed_positions),
+            )
 
-        plan, records = pm.run_assessment(watchlist=universe)
+            plan, records = pm.run_assessment(watchlist=universe)
 
-        buys    = sum(1 for r in records if r.signal.action.value == "buy")
-        sells   = sum(1 for r in records if r.signal.action.value == "sell")
-        reduces = sum(1 for r in records if r.signal.action.value == "reduce")
-        log.info(
-            "Scheduler [%s]: assessment complete — %d signal(s): %d buy, %d sell, %d reduce",
-            mode, len(records), buys, sells, reduces,
-        )
+            buys    = sum(1 for r in records if r.signal.action.value == "buy")
+            sells   = sum(1 for r in records if r.signal.action.value == "sell")
+            reduces = sum(1 for r in records if r.signal.action.value == "reduce")
+            log.info(
+                "Scheduler [%s]: assessment complete — %d signal(s): %d buy, %d sell, %d reduce",
+                mode, len(records), buys, sells, reduces,
+            )
 
-    except Exception:
-        log.exception("Scheduler: assessment job failed")
+        except Exception:
+            log.exception("Scheduler: assessment job failed")
 
 
 def run_stop_check_job() -> None:
@@ -147,19 +150,20 @@ def run_stop_check_job() -> None:
     if not _is_market_open():
         return
 
-    try:
-        pm = _get_or_create_pm()
-        records = pm.run_stop_check()
+    with _pm_lock:
+        try:
+            pm = _get_or_create_pm()
+            records = pm.run_stop_check()
 
-        if records:
-            mode = "DRY RUN" if pm.config.dry_run else "LIVE"
-            log.info(
-                "Scheduler [%s]: stop check — %d stop(s) triggered",
-                mode, len(records),
-            )
+            if records:
+                mode = "DRY RUN" if pm.config.dry_run else "LIVE"
+                log.info(
+                    "Scheduler [%s]: stop check — %d stop(s) triggered",
+                    mode, len(records),
+                )
 
-    except Exception:
-        log.exception("Scheduler: stop check job failed")
+        except Exception:
+            log.exception("Scheduler: stop check job failed")
 
 
 # ---------------------------------------------------------------------------

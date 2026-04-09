@@ -194,8 +194,9 @@ class PortfolioManager:
                 pos = tracked_map[bp.symbol]
                 pos.current_price = bp.current_price
                 pos.qty = bp.qty
-                # Populate stop_order_id if we have a fresher entry
-                if bp.symbol in stop_map and not self.stop_order_ids.get(bp.symbol):
+                # Always refresh stop_order_id from the latest broker scan so
+                # a stale/replaced order ID is corrected on the next sync.
+                if bp.symbol in stop_map:
                     _, oid = stop_map[bp.symbol]
                     if oid:
                         self.stop_order_ids[bp.symbol] = oid
