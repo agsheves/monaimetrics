@@ -602,9 +602,10 @@ class PortfolioManager:
         Runs more frequently than full assessment.
         """
         # Always sync first — picks up new positions, removes broker-closed ones,
-        # and refreshes prices. The early-return check comes AFTER the sync so that
-        # positions opened since the last run are immediately tracked.
-        self.load_from_broker()
+        # and refreshes prices (including dry_run simulations not in broker).
+        # The early-return check comes AFTER the sync so that positions opened
+        # since the last run are immediately tracked.
+        self.sync_positions()
 
         if not self.managed_positions:
             return []
