@@ -7,8 +7,30 @@ from monaimetrics.data_input import (
     get_tradeable_assets,
 )
 from monaimetrics.strategy import evaluate_opportunity
+from monaimetrics.trading_interface import get_open_orders
+from monaimetrics import calculators
 
 log = logging.getLogger(__name__)
+
+
+def _build_stop_map(clients: AlpacaClients) -> dict[str, float]:
+    """Scan open orders and return a map of symbol → current stop price."""
+    stop_map: dict[str, float] = {}
+    try:
+        for order in get_open_orders(clients):
+            if (
+                order.symbol
+                and order.side == "sell"
+                and order.order_type in ("stop", "stop_limit")
+                and order.stop_price is not None
+                and order.stop_price > 0
+            ):
+                existing = stop_map.get(order.symbol)
+                if existing is None or order.stop_price > existing:
+                    stop_map[order.symbol] = order.stop_price
+    except Exception as e:
+        log.warning("Could not fetch open orders for stop visibility: %s", e)
+    return stop_map
 
 
 def get_portfolio_data(risk_profile: str = "moderate") -> dict:
@@ -37,9 +59,29 @@ def get_portfolio_data(risk_profile: str = "moderate") -> dict:
 
     allocation = config.get_allocation(0)
 
-    total = account.portfolio_value if account.portfolio_value > 0 else 1
-    moderate_value = sum(p.market_value for p in positions) * allocation.moderate
-    high_value = sum(p.market_value for p in positions) * allocation.high
+    stop_map = _build_stop_map(clients)
+    stop_pct = config.moderate_tier.stop_loss
+    profit_pct = config.moderate_tier.profit_target
+    ratchet_step = config.ratchet_step_pct
+
+    def _position_dict(p) -> dict:
+        entry = p.avg_entry_price
+        stop_price = round(stop_map.get(p.symbol, entry * (1 - stop_pct)), 2)
+        target_price = round(entry * (1 + profit_pct), 2)
+        ratchet_raw = calculators.ratchet_stop_level(entry, p.current_price, ratchet_step)
+        ratchet_level = round(ratchet_raw, 2) if ratchet_raw is not None else None
+        return {
+            "symbol": p.symbol,
+            "qty": p.qty,
+            "avg_entry_price": entry,
+            "current_price": p.current_price,
+            "market_value": p.market_value,
+            "unrealized_pl": p.unrealized_pl,
+            "unrealized_pl_pct": p.unrealized_pl_pct,
+            "stop_price": stop_price,
+            "target_price": target_price,
+            "ratchet_level": ratchet_level,
+        }
 
     return {
         "connected": connected,
@@ -50,18 +92,7 @@ def get_portfolio_data(risk_profile: str = "moderate") -> dict:
             "buying_power": account.buying_power,
             "status": account.status,
         },
-        "positions": [
-            {
-                "symbol": p.symbol,
-                "qty": p.qty,
-                "avg_entry_price": p.avg_entry_price,
-                "current_price": p.current_price,
-                "market_value": p.market_value,
-                "unrealized_pl": p.unrealized_pl,
-                "unrealized_pl_pct": p.unrealized_pl_pct,
-            }
-            for p in positions
-        ],
+        "positions": [_position_dict(p) for p in positions],
         "allocation": {
             "moderate": allocation.moderate,
             "high": allocation.high,

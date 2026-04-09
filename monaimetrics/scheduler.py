@@ -18,6 +18,14 @@ Two jobs:
 Both jobs skip weekends and outside 09:30–16:00 ET.
 Both respect DRY_RUN — no orders are submitted while dry run is active.
 
+A singleton PortfolioManager is kept alive for the lifetime of the process.
+This preserves managed_positions, stop_order_ids, circuit-breaker counters,
+and other in-memory state across scheduler runs. On every call the config is
+re-read from env so that RISK_PROFILE and other settings take effect without
+a restart. Positions are bootstrapped from Alpaca on first use via
+load_from_broker(), then kept in sync on every subsequent assessment and
+stop-check run.
+
 Environment variables:
   STOP_CHECK_INTERVAL_MINUTES  Stop-loss check frequency (default: 15)
   SCAN_UNIVERSE_LIMIT          Max symbols per assessment cycle (default: 150)
@@ -41,6 +49,51 @@ ET = pytz.timezone("America/New_York")
 STOP_CHECK_INTERVAL = int(os.environ.get("STOP_CHECK_INTERVAL_MINUTES", "15"))
 SCAN_UNIVERSE_LIMIT = int(os.environ.get("SCAN_UNIVERSE_LIMIT", "150"))
 
+# ---------------------------------------------------------------------------
+# Singleton PortfolioManager
+# ---------------------------------------------------------------------------
+
+_pm = None  # type: ignore[var-annotated]  # PortfolioManager | None
+
+
+def _get_or_create_pm():
+    """Return the singleton PortfolioManager, creating it on first call.
+
+    Config is re-read on every call so that RISK_PROFILE and other env
+    changes take effect without a server restart.  The position list and all
+    in-memory state are preserved across calls.
+    """
+    global _pm
+
+    from monaimetrics.config import load_config_from_env
+    from monaimetrics.data_input import AlpacaClients
+    from monaimetrics.portfolio_manager import PortfolioManager
+
+    config = load_config_from_env()
+    clients = AlpacaClients(config.api)
+
+    if _pm is None:
+        _pm = PortfolioManager(config, clients)
+        _pm.load_from_broker()
+        log.info(
+            "Scheduler: singleton PortfolioManager created — %d position(s) "
+            "bootstrapped from broker (profile=%s, dry_run=%s)",
+            len(_pm.managed_positions),
+            config.profile.value,
+            config.dry_run,
+        )
+    else:
+        # Refresh config and clients so any env changes (e.g. RISK_PROFILE)
+        # are picked up without rebuilding the full PM.
+        _pm.config = config
+        _pm.clients = clients
+
+    return _pm
+
+
+# ---------------------------------------------------------------------------
+# Market hours helper
+# ---------------------------------------------------------------------------
 
 def _is_market_open() -> bool:
     now = datetime.now(ET)
@@ -51,28 +104,30 @@ def _is_market_open() -> bool:
     return open_time <= now < close_time
 
 
+# ---------------------------------------------------------------------------
+# Job functions
+# ---------------------------------------------------------------------------
+
 def run_assessment_job() -> None:
     """Full strategic assessment — evaluates the live universe and executes signals."""
     if not _is_market_open():
         log.debug("Scheduler: market closed, skipping assessment")
         return
 
-    from monaimetrics.config import load_config_from_env
-    from monaimetrics.data_input import AlpacaClients, get_tradeable_assets
-    from monaimetrics.portfolio_manager import PortfolioManager
+    from monaimetrics.data_input import get_tradeable_assets
 
     try:
-        config = load_config_from_env()
-        clients = AlpacaClients(config.api)
+        pm = _get_or_create_pm()
+        config = pm.config
         mode = "DRY RUN" if config.dry_run else "LIVE"
 
-        universe = get_tradeable_assets(clients, limit=SCAN_UNIVERSE_LIMIT)
+        universe = get_tradeable_assets(pm.clients, limit=SCAN_UNIVERSE_LIMIT)
         log.info(
-            "Scheduler [%s]: assessment starting — %d symbols in universe (profile=%s)",
-            mode, len(universe), config.profile.value,
+            "Scheduler [%s]: assessment starting — %d symbols in universe (profile=%s, "
+            "tracking %d position(s))",
+            mode, len(universe), config.profile.value, len(pm.managed_positions),
         )
 
-        pm = PortfolioManager(config, clients)
         plan, records = pm.run_assessment(watchlist=universe)
 
         buys    = sum(1 for r in records if r.signal.action.value == "buy")
@@ -92,18 +147,12 @@ def run_stop_check_job() -> None:
     if not _is_market_open():
         return
 
-    from monaimetrics.config import load_config_from_env
-    from monaimetrics.data_input import AlpacaClients
-    from monaimetrics.portfolio_manager import PortfolioManager
-
     try:
-        config = load_config_from_env()
-        clients = AlpacaClients(config.api)
-        pm = PortfolioManager(config, clients)
+        pm = _get_or_create_pm()
         records = pm.run_stop_check()
 
         if records:
-            mode = "DRY RUN" if config.dry_run else "LIVE"
+            mode = "DRY RUN" if pm.config.dry_run else "LIVE"
             log.info(
                 "Scheduler [%s]: stop check — %d stop(s) triggered",
                 mode, len(records),
@@ -112,6 +161,10 @@ def run_stop_check_job() -> None:
     except Exception:
         log.exception("Scheduler: stop check job failed")
 
+
+# ---------------------------------------------------------------------------
+# Scheduler startup
+# ---------------------------------------------------------------------------
 
 def start(run_assessment: bool = True, run_stops: bool = True) -> None:
     from apscheduler.schedulers.background import BackgroundScheduler

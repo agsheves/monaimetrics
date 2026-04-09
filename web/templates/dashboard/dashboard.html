@@ -58,6 +58,9 @@
                 <th>Qty</th>
                 <th>Avg Entry</th>
                 <th>Current</th>
+                <th>Stop</th>
+                <th>Ratchet Lvl</th>
+                <th>Target</th>
                 <th>Market Value</th>
                 <th>P&L</th>
                 <th>P&L %</th>
@@ -70,6 +73,15 @@
                 <td>{{ p.qty|floatformat:0 }}</td>
                 <td>${{ p.avg_entry_price|floatformat:2 }}</td>
                 <td>${{ p.current_price|floatformat:2 }}</td>
+                <td class="stop-level">${{ p.stop_price|floatformat:2 }}</td>
+                <td class="ratchet-level">
+                    {% if p.ratchet_level %}
+                    <span class="positive">${{ p.ratchet_level|floatformat:2 }}</span>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td class="target-level">${{ p.target_price|floatformat:2 }}</td>
                 <td>${{ p.market_value|floatformat:2 }}</td>
                 <td class="{% if p.unrealized_pl >= 0 %}positive{% else %}negative{% endif %}">
                     ${{ p.unrealized_pl|floatformat:2 }}

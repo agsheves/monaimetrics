@@ -119,9 +119,132 @@ class PortfolioManager:
 
     # ----- Position Sync -----
 
+    def load_from_broker(self) -> set[str]:
+        """Sync managed_positions with live Alpaca positions.
+
+        - Adds positions present at broker but not yet tracked.
+        - Removes tracked positions that no longer exist at broker (stop/target/
+          manual close).
+        - Updates qty and current_price for positions already tracked.
+        - Populates stop_order_ids from open stop/stop_limit orders.
+
+        In dry_run mode the app never submits real orders, so the broker holds
+        no positions placed by this PM. The sync is skipped; simulated positions
+        that were added via execute_plan() remain in managed_positions and their
+        prices are updated via get_latest_price() in sync_positions().
+
+        Returns the set of symbols successfully synced from the broker.
+        """
+        if self.config.dry_run:
+            return set()
+
+        try:
+            broker_positions = get_positions(self.clients)
+        except Exception as e:
+            log.warning("load_from_broker: could not fetch positions: %s", e)
+            return set()
+
+        broker_symbols = {p.symbol for p in broker_positions}
+
+        # Remove tracked positions that are no longer at the broker
+        # (closed by bracket stop, take-profit, or manual action).
+        if not self.config.dry_run:
+            closed = [
+                p.symbol for p in self.managed_positions
+                if p.symbol not in broker_symbols
+            ]
+            if closed:
+                log.info(
+                    "load_from_broker: %d position(s) closed at broker: %s",
+                    len(closed), closed,
+                )
+                self.managed_positions = [
+                    p for p in self.managed_positions
+                    if p.symbol in broker_symbols
+                ]
+                for sym in closed:
+                    self.stop_order_ids.pop(sym, None)
+
+        # Build stop order map: symbol → (stop_price, order_id).
+        # Uses actual open orders so we always have the real current stop level.
+        stop_map: dict[str, tuple[float, str]] = {}
+        if not self.config.dry_run:
+            try:
+                for order in get_open_orders(self.clients):
+                    if (
+                        order.symbol
+                        and order.side == "sell"
+                        and order.order_type in ("stop", "stop_limit")
+                        and order.stop_price is not None
+                        and order.stop_price > 0
+                        and order.order_id
+                    ):
+                        existing = stop_map.get(order.symbol)
+                        if existing is None or order.stop_price > existing[0]:
+                            stop_map[order.symbol] = (order.stop_price, order.order_id)
+            except Exception as e:
+                log.warning("load_from_broker: could not fetch open orders: %s", e)
+
+        tracked_map = {p.symbol: p for p in self.managed_positions}
+        added: list[str] = []
+
+        for bp in broker_positions:
+            if bp.symbol in tracked_map:
+                # Refresh live data for existing tracked position
+                pos = tracked_map[bp.symbol]
+                pos.current_price = bp.current_price
+                pos.qty = bp.qty
+                # Populate stop_order_id if we have a fresher entry
+                if bp.symbol in stop_map and not self.stop_order_ids.get(bp.symbol):
+                    _, oid = stop_map[bp.symbol]
+                    if oid:
+                        self.stop_order_ids[bp.symbol] = oid
+                continue
+
+            # New position — bootstrap from broker data + open orders
+            entry = bp.avg_entry_price
+            stop_pct = self.config.moderate_tier.stop_loss
+            profit_pct = self.config.moderate_tier.profit_target
+
+            if bp.symbol in stop_map:
+                stop_price, oid = stop_map[bp.symbol]
+                if oid:
+                    self.stop_order_ids[bp.symbol] = oid
+            else:
+                stop_price = round(entry * (1 - stop_pct), 4)
+
+            target_price = round(entry * (1 + profit_pct), 4)
+
+            pos = ManagedPosition(
+                symbol=bp.symbol,
+                tier=Tier.MODERATE,
+                qty=bp.qty,
+                entry_price=entry,
+                entry_date=datetime.now(timezone.utc),
+                stop_price=stop_price,
+                target_price=target_price,
+                current_price=bp.current_price,
+                bracket_position=True,
+            )
+            self.managed_positions.append(pos)
+            added.append(bp.symbol)
+
+        if added:
+            log.info(
+                "load_from_broker: bootstrapped %d new position(s): %s",
+                len(added), added,
+            )
+
+        return broker_symbols
+
     def sync_positions(self):
-        """Update current prices from broker. Add weeks_held increment."""
+        """Sync managed_positions with the broker and update current prices."""
+        synced = self.load_from_broker()
+        # For any tracked positions not returned by the broker (e.g. dry_run
+        # simulations that were never submitted), fall back to a direct price fetch.
         for pos in self.managed_positions:
+            if pos.symbol in synced:
+                continue
             try:
                 price = get_latest_price(pos.symbol, self.clients)
                 if price > 0:
@@ -478,10 +601,14 @@ class PortfolioManager:
         Quick price-only check for stop-loss breaches.
         Runs more frequently than full assessment.
         """
+        # Always sync first — picks up new positions, removes broker-closed ones,
+        # and refreshes prices. The early-return check comes AFTER the sync so that
+        # positions opened since the last run are immediately tracked.
+        self.load_from_broker()
+
         if not self.managed_positions:
             return []
 
-        self.sync_positions()
         records = []
 
         for pos in list(self.managed_positions):

@@ -698,6 +698,11 @@ textarea { resize: vertical; min-height: 100px; }
     .page-header p { font-size: 0.8rem; }
 }
 
+/* ---- Portfolio position columns ---- */
+.stop-level  { color: var(--red); }
+.target-level { color: var(--green); }
+.ratchet-level { color: var(--yellow); }
+
 /* --- Skipped signals collapsible section --- */
 .skipped-card {
     border-color: var(--border);

@@ -53,6 +53,7 @@ class OrderResult:
     filled_avg_price: float | None = None
     message: str = ""
     order_type: str = ""  # "market", "limit", "stop", "stop_limit", or ""
+    stop_price: float | None = None  # set for stop / stop_limit orders
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +125,13 @@ def _result_from_alpaca(order) -> OrderResult:
         order_type_str = order.order_type.value if order.order_type else ""
     except Exception:
         pass
+    stop_price_val: float | None = None
+    try:
+        raw_stop = getattr(order, "stop_price", None)
+        if raw_stop is not None:
+            stop_price_val = float(raw_stop)
+    except Exception:
+        pass
     return OrderResult(
         order_id=str(order.id),
         symbol=order.symbol,
@@ -133,6 +141,7 @@ def _result_from_alpaca(order) -> OrderResult:
         filled_qty=float(order.filled_qty) if order.filled_qty else 0.0,
         filled_avg_price=float(order.filled_avg_price) if order.filled_avg_price else None,
         order_type=order_type_str,
+        stop_price=stop_price_val,
     )
 
 
