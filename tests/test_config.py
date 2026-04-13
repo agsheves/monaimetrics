@@ -59,15 +59,30 @@ class TestLoadConfig:
         assert cfg.profile == RiskProfile.MODERATE
 
     def test_dry_run_default_true(self):
-        cfg = load_config()
-        assert cfg.dry_run is True
+        # Code-level default is True (safe). user_config.yaml overrides to False
+        # for production. Test in isolation by removing the env var temporarily.
+        import os
+        prev = os.environ.pop("DRY_RUN", None)
+        try:
+            cfg = load_config()
+            assert cfg.dry_run is True
+        finally:
+            if prev is not None:
+                os.environ["DRY_RUN"] = prev
 
     def test_conservative_tighter_stops(self):
+        # Conservative stop (0.04) must be tighter than moderate (0.06).
+        # STOP_LOSS env var must NOT be set; user_config.yaml should not include it.
+        import os
+        os.environ.pop("STOP_LOSS", None)
         con = load_config(RiskProfile.CONSERVATIVE)
         mod = load_config(RiskProfile.MODERATE)
         assert con.moderate_tier.stop_loss < mod.moderate_tier.stop_loss
 
     def test_aggressive_wider_stops(self):
+        # Aggressive stop (0.10) must be wider than moderate (0.06).
+        import os
+        os.environ.pop("STOP_LOSS", None)
         agg = load_config(RiskProfile.AGGRESSIVE)
         mod = load_config(RiskProfile.MODERATE)
         assert agg.moderate_tier.stop_loss > mod.moderate_tier.stop_loss

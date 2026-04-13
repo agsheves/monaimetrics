@@ -425,7 +425,7 @@ def load_config(
         RiskProfile.CONSERVATIVE: dict(
             moderate=dict(
                 profit_target=0.20,
-                stop_loss=0.06,
+                stop_loss=0.04,
                 kelly_fraction=0.15,
                 max_position=0.08,
                 non_perf_review_weeks=3,

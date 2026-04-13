@@ -22,7 +22,13 @@ NOW = datetime.now(timezone.utc)
 
 
 def make_pm(config=None) -> PortfolioManager:
-    cfg = config or load_config()
+    if config is None:
+        # Unit tests always run in dry_run mode so they never hit live Alpaca.
+        # Override the env var before loading so user_config.yaml can't flip it.
+        os.environ["DRY_RUN"] = "true"
+        cfg = load_config()
+    else:
+        cfg = config
     return PortfolioManager(cfg)
 
 

@@ -260,6 +260,63 @@ class PortfolioManager:
             delta = now - pos.entry_date
             pos.weeks_held = delta.days // 7
 
+    def _ensure_stops_in_place(self) -> None:
+        """Re-place GTC stop orders for any managed position with no active broker stop.
+
+        Called at the start of each assessment cycle. Handles stops that were
+        lost overnight (e.g. due to account issues, manual cancellation, or
+        bracket leg cancellation) by re-placing them as persistent GTC orders.
+        Also reconciles stop_order_ids so the ratchet logic targets the right ID.
+        Skipped in dry_run mode since no real orders are submitted there.
+        """
+        if self.config.dry_run or not self.managed_positions:
+            return
+
+        try:
+            open_orders = get_open_orders(self.clients)
+        except Exception as e:
+            log.warning("_ensure_stops_in_place: could not query open orders: %s", e)
+            return
+
+        # Build map of symbols with an active broker stop order
+        active_stops: dict[str, str] = {}  # symbol → order_id
+        for order in open_orders:
+            if (
+                order.symbol
+                and order.side == "sell"
+                and order.order_type in ("stop", "stop_limit")
+                and order.stop_price is not None
+                and order.order_id
+            ):
+                # Keep highest-priority (first found) active stop per symbol
+                if order.symbol not in active_stops:
+                    active_stops[order.symbol] = order.order_id
+
+        placed = []
+        for pos in self.managed_positions:
+            if pos.symbol in active_stops:
+                # Reconcile tracked ID with reality
+                self.stop_order_ids[pos.symbol] = active_stops[pos.symbol]
+                continue
+
+            if pos.stop_price <= 0 or pos.qty <= 0:
+                continue
+
+            log.info(
+                "Placing missing GTC stop for %s qty=%.0f at $%.4f",
+                pos.symbol, pos.qty, pos.stop_price,
+            )
+            stop_result = place_stop_order(
+                pos.symbol, pos.qty, pos.stop_price,
+                self.config, time_in_force="gtc", clients=self.clients,
+            )
+            if stop_result.order_id and stop_result.order_id not in ("", "dry_run"):
+                self.stop_order_ids[pos.symbol] = stop_result.order_id
+                placed.append(pos.symbol)
+
+        if placed:
+            log.info("_ensure_stops_in_place: placed %d missing stop(s): %s", len(placed), placed)
+
     # ----- Circuit Breakers -----
 
     def check_circuit_breakers(self) -> bool:
@@ -355,58 +412,94 @@ class PortfolioManager:
                 qty=0, status="rejected", message="Size below 1 share",
             )
 
+        # Check whether we already hold a position in this symbol.
+        existing = next(
+            (p for p in self.managed_positions if p.symbol == signal.symbol),
+            None,
+        )
+
         # Cancel any existing stop order for this symbol before buying to avoid
         # "potential wash trade" rejections from Alpaca.
         old_stop_id = self.stop_order_ids.pop(signal.symbol, "")
         if old_stop_id and not self.config.dry_run:
             cancel_order(old_stop_id, self.config, self.clients)
 
-        # Submit as a bracket order (buy + embedded stop-loss in one request).
-        # Falls back to plain buy + separate stop if the bracket is rejected.
-        target = signal.target_price if signal.target_price > 0 else None
-        result, stop_order_id, bracket_used = submit_bracket_buy(
-            signal.symbol, qty, signal.stop_price,
-            config=self.config,
-            target_price=target,
-            clients=self.clients,
-        )
-
-        if result.status in ("accepted", "filled", "dry_run"):
-            entry = result.filled_avg_price or price
-            pos = ManagedPosition(
-                symbol=signal.symbol,
-                tier=signal.tier,
-                qty=qty,
-                entry_price=entry,
-                entry_date=datetime.now(timezone.utc),
-                stop_price=signal.stop_price,
-                target_price=signal.target_price,
-                current_price=entry,
-                bracket_position=bracket_used,
+        if existing:
+            # Adding to an existing position — use a plain market buy so we
+            # can immediately place a single consolidated GTC stop covering
+            # the full combined quantity.  A bracket would only cover the
+            # new lot and create an orphaned stop for the remainder.
+            result = submit_order(
+                OrderRequest(symbol=signal.symbol, side="buy", qty=qty),
+                config=self.config,
+                clients=self.clients,
             )
-            self.managed_positions.append(pos)
-
-            if stop_order_id:
-                # Got the stop-loss leg ID from the bracket — track it for
-                # later cancel/update (e.g. breakeven lock).
-                self.stop_order_ids[signal.symbol] = stop_order_id
-            elif not bracket_used:
-                # Bracket was rejected and we fell back to a plain market buy;
-                # place a separate stop-loss now.
-                stop_result = place_stop_order(
-                    signal.symbol, qty, signal.stop_price,
-                    self.config, clients=self.clients,
+            if result.status in ("accepted", "filled", "dry_run"):
+                entry = result.filled_avg_price or price
+                total_qty = existing.qty + qty
+                avg_entry = (
+                    (existing.entry_price * existing.qty + entry * qty) / total_qty
                 )
-                if stop_result.order_id:
-                    self.stop_order_ids[signal.symbol] = stop_result.order_id
-            # else: bracket accepted but no leg ID yet (pending fill) — the
-            # stop is broker-managed; do NOT create a second stop order.
+                existing.qty = total_qty
+                existing.entry_price = round(avg_entry, 4)
+                existing.current_price = entry
 
-            log.info(
-                "BUY %s %d shares @ %.2f (%s tier, stop=%.2f, bracket=%s)",
-                signal.symbol, qty, entry, signal.tier.value,
-                signal.stop_price, bracket_used,
+                # Place consolidated GTC stop for the full combined position.
+                stop_result = place_stop_order(
+                    signal.symbol, total_qty, signal.stop_price,
+                    self.config, time_in_force="gtc", clients=self.clients,
+                )
+                if stop_result.order_id and stop_result.order_id not in ("", "dry_run"):
+                    self.stop_order_ids[signal.symbol] = stop_result.order_id
+
+                log.info(
+                    "ADD %s +%d shares @ %.2f (total=%d, avg_entry=%.2f, stop=%.2f)",
+                    signal.symbol, qty, entry, total_qty,
+                    existing.entry_price, signal.stop_price,
+                )
+        else:
+            # New position — submit as a bracket order (buy + embedded stop-loss).
+            # Falls back to plain buy + separate GTC stop if bracket is rejected.
+            # Note: take-profit is NOT included in the bracket — the OCO relationship
+            # caused stop cancellation when the limit leg expired at market close.
+            # Profit targets are handled in software by the stop-check scheduler.
+            result, stop_order_id, bracket_used = submit_bracket_buy(
+                signal.symbol, qty, signal.stop_price,
+                config=self.config,
+                clients=self.clients,
             )
+
+            if result.status in ("accepted", "filled", "dry_run"):
+                entry = result.filled_avg_price or price
+                pos = ManagedPosition(
+                    symbol=signal.symbol,
+                    tier=signal.tier,
+                    qty=qty,
+                    entry_price=entry,
+                    entry_date=datetime.now(timezone.utc),
+                    stop_price=signal.stop_price,
+                    target_price=signal.target_price,
+                    current_price=entry,
+                    bracket_position=bracket_used,
+                )
+                self.managed_positions.append(pos)
+
+                if stop_order_id:
+                    self.stop_order_ids[signal.symbol] = stop_order_id
+                elif not bracket_used:
+                    # Bracket rejected — place a separate GTC stop.
+                    stop_result = place_stop_order(
+                        signal.symbol, qty, signal.stop_price,
+                        self.config, time_in_force="gtc", clients=self.clients,
+                    )
+                    if stop_result.order_id and stop_result.order_id not in ("", "dry_run"):
+                        self.stop_order_ids[signal.symbol] = stop_result.order_id
+
+                log.info(
+                    "BUY %s %d shares @ %.2f (%s tier, stop=%.2f, bracket=%s)",
+                    signal.symbol, qty, entry, signal.tier.value,
+                    signal.stop_price, bracket_used,
+                )
 
         return result
 
@@ -543,7 +636,11 @@ class PortfolioManager:
         self.sync_positions()
         self.update_weeks_held()
 
-        # 2. Circuit breakers
+        # 2. Ensure every managed position has an active GTC stop at the broker.
+        #    This recovers stops that were lost overnight or cancelled externally.
+        self._ensure_stops_in_place()
+
+        # 3. Circuit breakers
         self.check_circuit_breakers()
 
         # 3. Get account state

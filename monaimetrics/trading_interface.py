@@ -15,7 +15,6 @@ from alpaca.trading.requests import (
     LimitOrderRequest,
     StopOrderRequest,
     StopLimitOrderRequest,
-    TakeProfitRequest,
     StopLossRequest,
 )
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus, OrderClass
@@ -239,14 +238,18 @@ def submit_bracket_buy(
     qty: float,
     stop_price: float,
     config: SystemConfig,
-    target_price: float | None = None,
     clients: AlpacaClients | None = None,
 ) -> tuple[OrderResult, str, bool]:
     """
     Submit a bracket buy order: a single market buy with an embedded stop-loss
-    (and optional take-profit) attached.  This avoids Alpaca "potential wash
-    trade" rejections that occur when a separate stop order is open for the
-    same symbol.
+    attached.  This avoids Alpaca "potential wash trade" rejections that occur
+    when a separate stop order is open for the same symbol.
+
+    Note: take-profit is intentionally excluded from the bracket. Including a
+    take-profit leg creates an OCO (One-Cancels-Other) pair — when the limit
+    leg expires at market close, Alpaca cancels the stop leg too, leaving the
+    position unprotected. Profit targets are handled in software by the
+    stop-check scheduler, which runs every 15 minutes during market hours.
 
     Returns:
         (OrderResult, stop_order_id, bracket_used)
@@ -262,11 +265,7 @@ def submit_bracket_buy(
     pending fill) still owns the stop atomically — no second stop needed.
     """
     if config.dry_run:
-        log.info(
-            "DRY RUN: BRACKET BUY %s %s shares, stop=%.2f%s",
-            qty, symbol, stop_price,
-            f", target={target_price:.2f}" if target_price else "",
-        )
+        log.info("DRY RUN: BRACKET BUY %s %s shares, stop=%.2f", qty, symbol, stop_price)
         return (
             OrderResult(
                 order_id="dry_run",
@@ -291,8 +290,6 @@ def submit_bracket_buy(
             order_class=OrderClass.BRACKET,
             stop_loss=stop_req,
         )
-        if target_price and target_price > 0:
-            kwargs["take_profit"] = TakeProfitRequest(limit_price=round(target_price, 2))
 
         order = c.submit_order(MarketOrderRequest(**kwargs))
         result = _result_from_alpaca(order)
