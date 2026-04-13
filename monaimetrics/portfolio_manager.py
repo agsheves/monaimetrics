@@ -332,26 +332,30 @@ class PortfolioManager:
                 self.pause_reason = ""
                 self.pause_until = None
 
-        try:
-            account = get_account(self.clients)
-        except Exception as e:
-            self.paused = True
-            self.pause_reason = f"API failure: {e}"
-            log.error("Circuit breaker: API failure — %s", e)
-            return True
-
-        # Track peak
-        if account.portfolio_value > self.peak_value:
-            self.peak_value = account.portfolio_value
-
-        # Max drawdown
-        if self.peak_value > 0:
-            drawdown = (self.peak_value - account.portfolio_value) / self.peak_value
-            if drawdown >= self.config.circuit_breakers.max_drawdown:
+        # Drawdown check requires a live account balance. Skip entirely in dry_run
+        # mode — no real capital is at risk, and the call may fail against a paper
+        # endpoint that the current API keys are not authorized for.
+        if not self.config.dry_run:
+            try:
+                account = get_account(self.clients)
+            except Exception as e:
                 self.paused = True
-                self.pause_reason = f"Max drawdown {drawdown:.1%} >= {self.config.circuit_breakers.max_drawdown:.1%}"
-                log.warning("Circuit breaker: %s", self.pause_reason)
+                self.pause_reason = f"API failure: {e}"
+                log.error("Circuit breaker: API failure — %s", e)
                 return True
+
+            # Track peak
+            if account.portfolio_value > self.peak_value:
+                self.peak_value = account.portfolio_value
+
+            # Max drawdown
+            if self.peak_value > 0:
+                drawdown = (self.peak_value - account.portfolio_value) / self.peak_value
+                if drawdown >= self.config.circuit_breakers.max_drawdown:
+                    self.paused = True
+                    self.pause_reason = f"Max drawdown {drawdown:.1%} >= {self.config.circuit_breakers.max_drawdown:.1%}"
+                    log.warning("Circuit breaker: %s", self.pause_reason)
+                    return True
 
         # Rapid loss (3+ stops in one day)
         today = datetime.now(timezone.utc).date()
@@ -379,24 +383,26 @@ class PortfolioManager:
                 qty=0, status="rejected", message="Zero position size",
             )
 
-        # Cash reserve check — never deploy more than (1 - cash_reserve_pct) of cash
-        try:
-            account = get_account(self.clients)
-            total_cash = float(account.cash)
-            reserve = total_cash * self.config.cash_reserve_pct
-            spendable = total_cash - reserve
-            if spendable < signal.position_size_usd:
-                return OrderResult(
-                    order_id="", symbol=signal.symbol, side="buy",
-                    qty=0, status="rejected",
-                    message=(
-                        f"Cash reserve: ${total_cash:.0f} total, "
-                        f"${reserve:.0f} held in reserve, "
-                        f"${spendable:.0f} spendable < ${signal.position_size_usd:.0f} needed"
-                    ),
-                )
-        except Exception as e:
-            log.warning("Could not check cash reserve for %s: %s", signal.symbol, e)
+        # Cash reserve check — never deploy more than (1 - cash_reserve_pct) of cash.
+        # Skipped in dry_run mode since no real capital is being spent.
+        if not self.config.dry_run:
+            try:
+                account = get_account(self.clients)
+                total_cash = float(account.cash)
+                reserve = total_cash * self.config.cash_reserve_pct
+                spendable = total_cash - reserve
+                if spendable < signal.position_size_usd:
+                    return OrderResult(
+                        order_id="", symbol=signal.symbol, side="buy",
+                        qty=0, status="rejected",
+                        message=(
+                            f"Cash reserve: ${total_cash:.0f} total, "
+                            f"${reserve:.0f} held in reserve, "
+                            f"${spendable:.0f} spendable < ${signal.position_size_usd:.0f} needed"
+                        ),
+                    )
+            except Exception as e:
+                log.warning("Could not check cash reserve for %s: %s", signal.symbol, e)
 
         price = get_latest_price(signal.symbol, self.clients)
         if price <= 0:
