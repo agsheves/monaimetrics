@@ -3,6 +3,7 @@
 Hand-off log between sessions and machines, newest entry first. Read the top entry before starting work; add one before you stop.
 
 Non-negotiable: an entry is 150 words or fewer. Short and clear, or it defeats the purpose.
+Shorthand is fine. Point at buildfiles, commits, or bloopers instead of repeating them. This is a quick recap of what was done, what was not, and where things stand, so the next agent can pick up fast.
 
 Every entry must cover, as terse bullets:
 - Activity: what was done.
